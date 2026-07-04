@@ -1,16 +1,15 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
+const { useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const fs = require('fs');
-const path = require('path');
 
-// إعدادات البوت الرئيسية
-const DEVELOPER_NUMBER = "212784776925@s.whatsapp.net"; // رقم المطور الخاص بك
-const BOT_PREFIX = "."; // رمز تشغيل الأوامر (مثال: .اوامر)
+// إعدادات البوت العامة
+global.developer = "212784776925"; 
+global.prefix = "."; 
+global.ninjaDatabase = global.ninjaDatabase || {};
+global.guessGame = global.guessGame || {};
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('session_auth');
-
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
@@ -21,150 +20,135 @@ async function startBot() {
 
     // 1. توليد كود التحقق الرقمي تلقائياً للربط
     if (!sock.authState.creds.registered) {
-        const phoneNumber = "212784776925"; 
         setTimeout(async () => {
             try {
-                let code = await sock.requestPairingCode(phoneNumber);
+                let code = await sock.requestPairingCode(global.developer);
                 code = code?.match(/.{1,4}/g)?.join("-") || code;
                 console.log(`\n========================================`);
-                console.log(`[+] كود الربط الخاص بك هو: ${code}`);
+                console.log(`[+] كود الربط الرقمي الخاص بك هو: ${code}`);
                 console.log(`========================================\n`);
             } catch (error) {
-                console.error("خطأ أثناء طلب كود الربط:", error);
+                console.error("خطأ في طلب كود الربط:", error);
             }
         }, 3000);
     }
 
-    // 2. مستمع الرسائل، الأوامر، الجروبات، والـ APIs
+    // 2. مستمع ومعالج الرسائل والردود التلقائية والأوامر
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
             const msg = chatUpdate.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
+            if (!msg || !msg.message || msg.key.fromMe) return;
 
             const from = msg.key.remoteJid;
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? msg.key.participant : from;
-            
-            // استخراج نص الرسالة
-            const body = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-            if (!body.startsWith(BOT_PREFIX)) return; // يتجاهل الرسائل التي لا تبدأ بالرمز .
 
-            const args = body.slice(BOT_PREFIX.length).trim().split(/ +/);
+            // قراءة النص بشكل شامل وثابت لمنع مشكلة الصمت
+            const body = msg.message.conversation || 
+                         msg.message.extendedTextMessage?.text || 
+                         msg.message.imageMessage?.caption || "";
+            const cleanText = body.trim();
+
+            // --- [ نظام الألعاب التفاعلية: تخمين أعلام الدول ] ---
+            if (global.guessGame && global.guessGame[from]) {
+                if (cleanText === global.guessGame[from].answer) {
+                    clearTimeout(global.guessGame[from].timeout);
+                    delete global.guessGame[from];
+                    return sock.sendMessage(from, { text: `🎉 *إجابة صحيحة مذهلة!* \n\nبطل النقابة الأسرع هو الذي خمن اسم الدولة الصحيح 🏆✨` }, { quoted: msg });
+                }
+            }
+
+            // --- [ نظام الرد التلقائي المباشر للمطور ] ---
+            if (body.includes('مطور') || body.includes('المطور') || body.includes('المالك')) {
+                let devReply = `👑 *﹝ إدارة كاكاشي بوت ﹞*\n\n👋 للتواصل المباشر مع المطور اضغط هنا:\n🔗 https://wa.me`;
+                return sock.sendMessage(from, { text: devReply }, { quoted: msg });
+            }
+
+            // التحقق من رمز الأمر ومقاطعة الرسائل العادية
+            if (!body.startsWith(global.prefix)) return;
+
+            const args = body.slice(global.prefix.length).trim().split(/ +/);
             const command = args.shift().toLowerCase();
             const textArgs = args.join(" ");
 
-            // جلب معلومات الجروب والتحكم بالرتب (النقابات/المشرفين)
-            let groupMetadata = isGroup ? await sock.groupMetadata(from) : null;
-            let groupAdmins = isGroup ? groupMetadata.participants.filter(v => v.admin !== null).map(v => v.id) : [];
-            const isAdmin = groupAdmins.includes(sender);
-            const isBotAdmin = groupAdmins.includes(sock.user.id.split(':')[0] + '@s.whatsapp.net');
-            const isDeveloper = sender === DEVELOPER_NUMBER;
+            // تفعيل داتا الشخصيات القتالية
+            if (!global.ninjaDatabase[sender]) {
+                global.ninjaDatabase[sender] = { level: 1, xp: 0, gold: 100, power: 50, wins: 0 };
+            }
+            const profile = global.ninjaDatabase[sender];
 
-            // ================= [ نظام الأوامر المزخرفة والـ APIs ] =================
-
+            // --- [ تحويل الحالات والرد على الأوامر ] ---
             switch (command) {
-                // أمر قائمة الأوامر المزخرفة
-                case 'الاوامر':
+                case 'اوامر':
                 case 'أوامر':
                 case 'menu':
-                    const menuText = `
-✨ ━━━━━━ 🌟 *كــاكــاشــي بــوت* 🌟 ━━━━━━ ✨
-👑 *الـمـطـور:* @${DEVELOPER_NUMBER.split('@')[0]}
-📡 *الـحـالـة:* مـتـصـل ⚡
-📌 *الـرمـز:* [ ${BOT_PREFIX} ]
+                    const menuText = `✨ ━━━━━━ 🌟 *كــاكــاشــي بــوت* 🌟 ━━━━━━ ✨
+👑 *الـمـطـور:* @${global.developer}
+📌 *الـرمـز الـمـعتـمـد:* [ ${global.prefix} ]
 ━━━━━━━━━━━━━━━━━━━━━━━━
-📜 *﹝ أواﻣِـﺮ اﻟـﺠُـﺮوﺑـﺎت واﻟـﻨِّـﻘـﺎﺑـﺎت ﹞*
-  » ${BOT_PREFIX}طرد (لمسح عضو)
-  » ${BOT_PREFIX}رفع_ادمن (منح رتبة)
-  » ${BOT_PREFIX}قفل (إغلاق الجات)
+⚔️ *﹝ أواﻣِـﺮ الـقِـتـال والألْـعَـاب ﹞*
+  » ${global.prefix}شخصيتي (ملف الحساب والذهب)
+  » ${global.prefix}تدريب (لرفع طاقة الشينوبي)
+  » ${global.prefix}تخمين (لعبة أعلام الدول)
 
-🎥 *﹝ أواﻣِـﺮ اﻟـﻤِـﻴـﺪﻳـﺎ واﻟـﺘَّـﻨـﺰﻳـﻼت ﹞*
-  » ${BOT_PREFIX}فيديو [رابط اليوتيوب/تيك توك]
-  » ${BOT_PREFIX}توليد [نص لتحويله لكود]
+🛡️ *﹝ أواﻣِـﺮ الـجُـروبَـات واﻟـﻨِّـﻘـﺎﺑـﺎت ﹞*
+  » ${global.prefix}قفل (إغلاق الجات للمشرفين)
+  » ${global.prefix}فتح (فتح الجات للجميع)
 ━━━━━━━━━━━━━━━━━━━━━━━━
-🌟 *تم التطوير بكل حب لـ كاكاشي بوت* 🌟`;
-                    await sock.sendMessage(from, { text: menuText, mentions: [DEVELOPER_NUMBER] }, { quoted: msg });
+🌟 *تمت الصيانة الشاملة للبوت بنجاح* 🌟`;
+                    await sock.sendMessage(from, { text: menuText, mentions: [global.developer + '@s.whatsapp.net'] }, { quoted: msg });
                     break;
 
-                // أمر تحكم المشرفين: طرد عضو
-                case 'طرد':
-                case 'kick':
-                    if (!isGroup) return reply(sock, from, "❌ هذا الأمر يعمل داخل المجموعات فقط!", msg);
-                    if (!isAdmin && !isDeveloper) return reply(sock, from, "❌ هذا الأمر خاص بالمشرفين والنقابة فقط!", msg);
-                    if (!isBotAdmin) return reply(sock, from, "❌ يجب رفع البوت مشرف أولاً!", msg);
-                    
-                    let targetKick = msg.message.extendedTextMessage?.contextInfo?.mentionedJid[0] || args[0] + '@s.whatsapp.net';
-                    await sock.groupParticipantsUpdate(from, [targetKick], "remove");
-                    await reply(sock, from, "✅ تم طرد العضو بنجاح من المجموعة.", msg);
+                case 'شخصيتي':
+                    await sock.sendMessage(from, { text: `🥷 *﹝ مَـلَـف الـشِّـيـنُـوبِـي الأُسْـطُـورِي ﹞*\n\n📊 *المستوى:* [ ${profile.level} ]\n⚔️ *القوة:* [ 🛡️ ${profile.power} ]\n💰 *الذهب:* [ 🪙 ${profile.gold} ]\n🏆 *الانتصارات:* [ ${profile.wins} ]` }, { quoted: msg });
                     break;
 
-                // أمر تشغيل الـ API وتحميل الفيديوهات
-                case 'فيديو':
-                case 'video':
-                    if (!textArgs) return reply(sock, from, "❌ يرجى إدخال رابط الفيديو! مثال:\n.فيديو https://youtube.com...", msg);
-                    await reply(sock, from, "⏳ جاري تحميل وفحص الفيديو عبر الـ API... انتظر قليلاً", msg);
-                    
-                    try {
-                        // هنا يمكنك استبدال الرابط بـ API تحميل حقيقي خاص بك
-                        const apiUrl = `https://screenshotlayer.com{encodeURIComponent(textArgs)}`; 
-                        
-                        await sock.sendMessage(from, { 
-                            video: { url: apiUrl }, 
-                            caption: "🎬 *تم التحميل بنجاح بواسطة كاكاشي بوت* ⚡" 
-                        }, { quoted: msg });
-                    } catch (e) {
-                        await reply(sock, from, "❌ عذراً، فشل تحميل الفيديو من الـ API المحدد.", msg);
-                    }
+                case 'تدريب':
+                    const gainedGold = Math.floor(Math.random() * 40) + 10;
+                    profile.gold += gainedGold;
+                    profile.power += 5;
+                    await sock.sendMessage(from, { text: `🎯 لقد خضت تدريباً شاقاً وحصلت على:\n🪙 +${gainedGold} ذهب\n🛡️ +5 قوة إضافية!` }, { quoted: msg });
                     break;
 
-                // أمر توليد الأكواد الرقمية أو الرموز النصية المزخرفة
-                case 'توليد':
-                    if (!textArgs) return reply(sock, from, "❌ اكتب النص الذي تريد توليد كود أو زخرفة له.", msg);
-                    let decoratedText = textArgs.split('').map(char => char + '̶').join(''); // نموذج زخرفة برمجية بسيطة
-                    let randomCode = Math.floor(100000 + Math.random() * 900000); // توليد كود عشوائي من 6 أرقام
+                case 'تخمين':
+                    if (global.guessGame[from]) return sock.sendMessage(from, { text: "❌ هناك لعبة قائمة بالفعل!" }, { quoted: msg });
+                    global.guessGame[from] = {
+                        answer: "المغرب",
+                        timeout: setTimeout(() => {
+                            if (global.guessGame[from]) {
+                                sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* الإجابة الصحيحة كانت: *المغرب* 🇲🇦` });
+                                delete global.guessGame[from];
+                            }
+                        }, 30000)
+                    };
+                    await sock.sendMessage(from, { image: { url: 'https://flagcdn.com' }, caption: "🗺️ *خـمِّـن صُـورة الـعَـلَـم التالي لتربح الجائزة!*" }, { msg });
+                    break;
+
+                case 'قفل':
+                case 'فتح':
+                    if (!isGroup) return sock.sendMessage(from, { text: "❌ للجروبات فقط!" }, { quoted: msg });
+                    const metadata = await sock.groupMetadata(from);
+                    const admins = metadata.participants.filter(v => v.admin !== null).map(v => v.id);
+                    if (!admins.includes(sender)) return sock.sendMessage(from, { text: "❌ للمشرفين فقط!" }, { quoted: msg });
                     
-                    await reply(sock, from, `📝 *الزخرفة:* ${decoratedText}\n🔑 *الكود الرقمي المولد:* \`${randomCode}\``, msg);
+                    await sock.groupSettingUpdate(from, command === 'قفل' ? 'announcement' : 'not_announcement');
+                    await sock.sendMessage(from, { text: `🔒 تم ${command === 'قفل' ? 'قفل' : 'فتح'} الجروب بنجاح.` }, { quoted: msg });
                     break;
             }
-
         } catch (err) {
             console.error(err);
         }
     });
 
-    // دالة مساعدة لإرسال الرد السريع
-    async function reply(sock, from, text, msg) {
-        await sock.sendMessage(from, { text: text }, { quoted: msg });
-    }
-
-    // إعادة الاتصال الذكي
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
-    const { handleCommand } = require('./commands.js');
-
-sock.ev.on('messages.upsert', async chatUpdate => {
-    try {
-        const msg = chatUpdate.messages[0]; // قراءة الرسالة الأولى المباشرة
-        if (!msg.message || msg.key.fromMe) return;
-
-        const from = msg.key.remoteJid;
-        const body = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-
-        // تشغيل المعالج الشامل فوراً
-        await handleCommand(sock, from, msg, body);
-
-    } catch (err) {
-        console.error("خطأ في استقبال الرسالة:", err);
-    }
-});
-    if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startBot();
+        if (connection === 'close') {
+            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
         } else if (connection === 'open') {
-            console.log('[+] كاكاشي بوت متصل ويعمل بنظام النقابات والـ API!');
+            console.log('[+] كاكاشي بوت متصل ويعمل بنظام الحماية والرد الشامل والمباشر!');
         }
     });
 }
 
 startBot();
-                    
+                                                  
