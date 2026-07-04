@@ -188,37 +188,4 @@ async function startBot() {
 }
 
 startBot();
-                
-    // إدارة تدفق الرسائل الواردة بذكاء وتوزيعها على الملفات المنفصلة
-    sock.ev.on('messages.upsert', async chatUpdate => {
-        try {
-            const msg = chatUpdate.messages[0];
-            if (!msg || !msg.message || msg.key.fromMe) return;
-
-            const from = msg.key.remoteJid;
-            const body = msg.message.conversation || 
-                         msg.message.extendedTextMessage?.text || 
-                         msg.message.imageMessage?.caption || "";
-
-            // 1. تفعيل معالج الردود والألعاب التلقائية أولاً بشكل صامت
-            await handleReplies(sock, from, msg, body);
-
-            // 2. تفعيل معالج الأوامر الملكية والاقتصاد والمتجر الشامل
-            await handleCommand(sock, from, msg, body);
-
-        } catch (err) {
-            console.error("خطأ داخلي في توزيع السوكت المكتوب:", err);
-        }
-    });
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            if (lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
-        } else if (connection === 'open') {
-            console.log('[+] كاكاشي بوت متصل ويعمل بنظام المعالجات المنفصلة والـ APIs الفورية للرد!');
-        }
-    });
-}
-
-startBot();
+                                           
