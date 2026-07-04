@@ -1,355 +1,171 @@
-const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
-// دالة لتوليد خطوط مزخرفة مطورة للنصوص العربية والإنجليزية والعلامات
-function decorateText(text) {
-    const borders = "✨ ━━━━━━ ❖ ━━━━━━ ✨";
-    return `${borders}\n\n👑 💠  ${text}  💠 👑\n\n${borders}`;
-}
-
-// 📦 قاعدة بيانات الـ 1000 أمر والردود العربية التلقائية والصوتية
-const arabicReplies = {
-    // أمثلة لردود "خرفية" مضحكة وتفاعلية للمجموعات
-    "السلام عليكم": { type: "text", content: "وعليكم السلام ورحمة الله وبركاته! يا مية أهلاً وسهلاً بيك في المجموعة، نوّرتنا وغيّرت الجو بأكمله الحين! 🌟" },
-    "البوت": { type: "text", content: "لبّييه يا صاحب الرقم الملكي! أنا هنا طوع أمرك وفي خدمتك على مدار الـ 24 ساعة، اطلب تمنى!" },
-    "منور": { type: "text", content: "بوجودك يا غالي، النور هذا كله ينعكس من عيونك ومن حضورك الفخم معنا." },
-    "ضحكة": { type: "audio", content: "https://soundjay.com" }, // رابط صوت مباشر
-    "شيلات": { type: "audio", content: "https://soundjay.com" },
-    
-    // ملاحظة: يمكنك الاستمرار في نسخ ولصق الأسطر هنا حتى تصل لـ 1000 أمر تريد برمجتها يدوياً تحت نفس النمط
-};
-
-module.exports = {
-    name: "النظام_المطور",
-    description: "حزمة الأوامر الموحدة (يوتيوب، بث، ردود، ذكاء اصطناعي، فلترة رقم البوت)",
-    async execute(client, message, args) {
-        
-        // 🔒 الفلترة الذكية: التحقق من أن الرسالة صادرة من نفس رقم البوت (أو صاحب البوت)
-        // message.fromMe تعني أن الحساب الذي أرسل الأمر هو نفس حساب الواتساب المشغل للبوت
-        if (!message.fromMe) {
-            // إذا كنت تريد السماح للمجموعات بالردود التلقائية ولكن الأوامر القوية لك فقط:
-            // سنترك الردود التلقائية العامة، ونحمي أوامر التحميل والبث للرقم الخاص بك فقط.
-        }
-
-        const inputtext = message.body.trim();
-        const commandArg = args.join(" ");
-
-        // ----------------------------------------------------
-        // 1️⃣ قسم الـ 1000 أمر عربي والردود الصوتية والنصية
-        // ----------------------------------------------------
-        if (arabicReplies[inputtext]) {
-            const commandData = arabicReplies[inputtext];
-            if (commandData.type === "text") {
-                const decorated = decorateText(commandData.content);
-                return await client.sendMessage(message.from, decorated);
-            } else if (commandData.type === "audio") {
-                return await client.sendMessage(message.from, {
-                    audio: { url: commandData.content },
-                    mimetype: 'audio/mp4',
-                    ptt: true // إرسال كمقطع صوتي مسجل (فويس)
-                });
-            }
-        }
-
-        // ----------------------------------------------------
-        // 2️⃣ أمر تحميل إيديت وفيديوهات يوتيوب (خاص برقمك فقط للأمان)
-        // ----------------------------------------------------
-        if (inputtext.startsWith(".تحميل") || inputtext.startsWith("تحميل")) {
-            if (!message.fromMe) return message.reply("⚠️ هذا الأمر مخصص لمالك البوت فقط.");
-            if (!commandArg) return message.reply(decorateText("❌ يرجى وضع رابط فيديو يوتيوب أو إيديت رياضي بعد الأمر."));
-
-            await message.reply("⏳ جاري سحب ومعالجة الفيديو الرياضي من اليوتيوب، انتظر قليلاً...");
-            const fileName = `yt_${Date.now()}.mp4`;
-            const outputPath = path.join(__dirname, '../', fileName);
-            const downloadCommand = `yt-dlp -f "best[ext=mp4][filesize<45M]/best" "${commandArg}" -o "${outputPath}"`;
-
-            exec(downloadCommand, async (error) => {
-                if (error) return message.reply(decorateText("❌ فشل تحميل الفيديو، تأكد من حجم الملف والرابط."));
-                try {
-                    await client.sendMessage(message.from, {
-                        video: fs.readFileSync(outputPath),
-                        caption: decorateText("🎬 تم استخراج الإيديت الرياضي بنجاح بواسطة نظامك!"),
-                        mimetype: 'video/mp4'
-                    });
-                    fs.unlinkSync(outputPath);
-                } catch (e) {
-                    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-                }
-            });
-            return;
-        }
-
-        // ----------------------------------------------------
-        // 3️⃣ أمر سيرفرات البث المباشر للمباريات (مزخرف ومطور)
-        // ----------------------------------------------------
-        if (inputtext === "بث" || inputtext === ".بث") {
-            const liveTemplate = `
-⚽ *سيرفرات البث المباشر والمباريات الحالية* 📺
-
-قناة *BEIN SPORTS 1 HD* البث الرئيسي:
-🔗 https://sports-stream-api.net
-
-قناة *BEIN SPORTS 2 HD* جودة متوسطة:
-🔗 https://sports-stream-api.net
-
-*💡 ملاحظة تشغيلية:* انسخ الرابط وافتحه عبر تطبيق VLC على هاتفك للبث المباشر المستمر بدون تقطيع.
-            `;
-            return await client.sendMessage(message.from, decorateText(liveTemplate));
-        }
-
-        // ----------------------------------------------------
-        // 4️⃣ الرد التلقائي عبر الذكاء الاصطناعي API (خرفية تامة لأي نص آخر)
-        // ----------------------------------------------------
-        // إذا تم منشن البوت أو الحديث معه في المجموعات ولم يكن أمراً ثابتاً، يذهب للـ API
-        if (message.isGroup && inputtext.includes("بوت") && !arabicReplies[inputtext]) {
-            try {
-                // استدعاء ريبورت ذكي مجاني (تم استبدال الرابط بـ API تفاعلي عربي)
-                const aiResponse = await axios.get(`https://simsimi.net{encodeURIComponent(inputtext)}&lc=ar`);
-                const aiReply = aiResponse.data.success || "أنا معك يا غالي! أسمعك جيداً، اطلب ما تريد.";
-                return await client.sendMessage(message.from, decorateText(aiReply));
-            } catch (err) {
-                // رد احتياطي في حال توقف السيرفر الخارجي للـ API
-                return await client.sendMessage(message.from, decorateText("مرحباً بك! نظام الذكاء الاصطناعي متصل وجاهز للرد على كل طلباتك بالمجموعة."));
-            }
-        }
-    }
-};// مصفوفة تحتوي على عينة من الدول وأعلامها لإدارة اللعبة محلياً وبسرعة
-const countries = [
-    { name: 'المغرب', code: 'ma' },
-    { name: 'مصر', code: 'eg' },
-    { name: 'السعودية', code: 'sa' },
-    { name: 'الجزائر', code: 'dz' },
-    { name: 'تونس', code: 'tn' },
-    { name: 'العراق', code: 'iq' },
-    { name: 'فلسطين', code: 'ps' },
-    { name: 'الأردن', code: 'jo' },
-    { name: 'الإمارات', code: 'ae' },
-    { name: 'الكويت', code: 'kw' },
-    { name: 'قطر', code: 'qa' },
-    { name: 'اليمن', code: 'ye' },
-    { name: 'سوريا', code: 'sy' },
-    { name: 'لبنان', code: 'lb' },
-    { name: 'عمان', code: 'om' },
-    { name: 'موريتانيا', code: 'mr' },
-    { name: 'السودان', code: 'sd' },
-    { name: 'ليبيا', code: 'ly' },
-    { name: 'فرنسا', code: 'fr' },
-    { name: 'البرازيل', code: 'br' },
-    { name: 'اليابان', code: 'jp' },
-    { name: 'الأرجنتين', code: 'ar' },
-    { name: 'إسبانيا', code: 'es' },
-    { name: 'إيطاليا', code: 'it' },
-    { name: 'ألمانيا', code: 'de' }
-];
-
-// كائن لحفظ الجلسة الحالية لكل محادثة (حتى لا تتداخل الجروبات)
+// تعريف قواعد البيانات المحلية المشتركة للأنظمة التفاعلية
+global.ninjaDatabase = global.ninjaDatabase || {};
 global.guessGame = global.guessGame || {};
+global.quizGame = global.quizGame || {};
+global.bountySystem = global.bountySystem || {};
 
-module.exports = {
-    name: 'تخمين',
-    run: async (sock, from, msg, args) => {
-        // إذا كانت اللعبة تعمل بالفعل في هذا الشات
-        if (global.guessGame[from]) {
-            return sock.sendMessage(from, { text: "❌ هناك لعبة قائمة بالفعل في هذه المحادثة! خمن الإجابة أو انتظر انتهاء الوقت." }, { quoted: msg });
-        }
-
-        // اختيار دولة عشوائية من القائمة
-        const randomIndex = Math.floor(Math.random() * countries.length);
-        const targetCountry = countries[randomIndex];
-
-        // رابط الـ API المعتمد لجلب صورة العلم بجودة عالية (64x48 بكسل أو أكثر)
-        const flagImageUrl = `https://flagcdn.com{targetCountry.code}.png`;
-
-        // تسجيل بيانات اللعبة الحالية في الذاكرة
-        global.guessGame[from] = {
-            answer: targetCountry.name,
-            timeout: setTimeout(() => {
-                if (global.guessGame[from]) {
-                    sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* ولم يعرف أحد الإجابة الصحيحة.\n\n💡 الإجابة كانت: *${targetCountry.name}* 🗺️` });
-                    delete global.guessGame[from];
-                }
-            }, 30000) // وقت الإجابة 30 ثانية
-        };
-
-        // إرسال صورة العلم كرسالة تخمين مزخرفة
-        const captionText = `
-╭━━━〔 🗺️ *خـمِّـن صُـورة الـعَـلَـم* 〕━━━╮
-┃
-┃ 🔎 *أمامك 30 ثانية لمعرفة اسم الدولة!*
-┃ 📝 أرسل الإجابة مباشرة في الشات بدون رموز.
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
-
-        await sock.sendMessage(from, { 
-            image: { url: flagImageUrl }, 
-            caption: captionText 
-        }, { quoted: msg });
-    }
+// المتجر الأسطوري لشراء المعدات
+const blackMarket = {
+    'سيف': { cost: 300, powerBonus: 40, desc: "🗡️ سيف الكوزاناجي لرفع قوة ضرباتك" },
+    'درع': { cost: 250, powerBonus: 25, desc: "🛡️ درع تشاكرا متطور لحمايتك من الغرامات" }
 };
-    sock.ev.on('messages.upsert', async chatUpdate => {
-        try {
-            const msg = chatUpdate.messages;
-            if (!msg.message || msg.key.fromMe) return;
 
-            const from = msg.key.remoteJid;
-            const body = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-            const cleanText = body.trim();
-
-            // --- [ 1. نظام التحقق من إجابة لعبة التخمين ] ---
-            if (global.guessGame && global.guessGame[from]) {
-                const session = global.guessGame[from];
-                
-                // إذا كانت رسالة العضو تطابق اسم الدولة الصحيح
-                if (cleanText === session.answer) {
-                    clearTimeout(session.timeout); // إيقاف العداد الزمني
-                    delete global.guessGame[from]; // مسح الجلسة لإنهاء اللعبة
-                    
-                    const winText = `🎉 *إجابة صحيحة ومذهلة!* \n\nبطل النقابة الأسرع هو الذي خمن: *${cleanText}* 🏆✨`;
-                    return sock.sendMessage(from, { text: winText }, { quoted: msg });
-                }
-            }
-
-            // نظام الردود التلقائية للمطور
-            if (body.includes('مطور') || body.includes('المطور')) {
-                let devReply = `👑 *مطور البوت:* https://wa.me`;
-                return sock.sendMessage(from, { text: devReply }, { quoted: msg });
-            }
-
-            if (!body.startsWith(global.prefix)) return;
-
-            const args = body.slice(global.prefix.length).trim().split(/ +/);
-            const commandName = args.shift().toLowerCase();
-
-            // --- [ 2. تشغيل الأوامر الاعتيادية من مجلد commands ] ---
-            const commandFile = path.join(__dirname, 'commands', `${commandName}.js`);
-            if (fs.existsSync(commandFile)) {
-                const command = require(commandFile);
-                await command.run(sock, from, msg, args, commandName);
-            }
-
-        } catch (err) {
-            console.error(err);
-        }
-    });const questions = [
-    { q: "ما هو الشيء الذي يكتب ولا يقرأ؟", a: "القلم" },
-    { q: "ما هو ثاني أكسيد الكربون برمز كيميائي؟", a: "co2" },
-    { q: "عاصمة المملكة المغربية هي؟", a: "الرباط" },
+// قائمة الأسئلة للفعاليات الترفيهية
+const quizQuestions = [
+    { q: "ما هو ثاني أكسيد الكربون برمزه الكيميائي؟", a: "co2" },
+    { q: "عاصمة المملكة المغربية الشريفة هي؟", a: "الرباط" },
     { q: "ما هو الشيء الذي كلما زاد نقص؟", a: "العمر" }
 ];
 
-global.quizGame = global.quizGame || {};
+async function handleCommand(sock, from, msg, body) {
+    try {
+        if (!body.startsWith(global.prefix)) return;
 
-module.exports = {
-    name: 'فعاليات',
-    run: async (sock, from, msg, args, commandName) => {
-        if (commandName === 'سؤال' || commandName === 'فعالية') {
-            if (global.quizGame[from]) return sock.sendMessage(from, { text: "❌ هناك سؤال قائم بالفعل!" }, { quoted: msg });
+        const args = body.slice(global.prefix.length).trim().split(/ +/);
+        const commandName = args.shift().toLowerCase();
+        const textArgs = args.join(" ");
+        const sender = from.endsWith('@g.us') ? msg.key.participant : from;
 
-            const randomQuiz = questions[Math.floor(Math.random() * questions.length)];
-            global.quizGame[from] = {
-                answer: randomQuiz.a,
-                timeout: setTimeout(() => {
-                    if (global.quizGame[from]) {
-                        sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* \n💡 الإجابة الصحيحة هي: *${randomQuiz.a}*` });
-                        delete global.quizGame[from];
-                    }
-                }, 30000)
-            };
-
-            const quizLayout = `
-╭━━━〔 🧠 *أَسْـئِـلَـة ذَكَــاء كَـاكَـاشِـي* 〕━━━╮
-┃
-┃ ❓ *السؤال:* ${randomQuiz.q}
-┃ ⏳ *الوقت:* 30 ثانية للإجابة مباشرة.
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
-            await sock.sendMessage(from, { text: quizLayout }, { quoted: msg });
+        // تفعيل ملف شخصية العضو تلقائياً
+        if (!global.ninjaDatabase[sender]) {
+            global.ninjaDatabase[sender] = { level: 1, xp: 0, gold: 100, power: 50, wins: 0 };
         }
-    }
-};module.exports = {
-    name: 'ديني',
-    run: async (sock, from, msg, args, commandName) => {
-        if (commandName === 'ذكر' || commandName === 'اية') {
-            try {
-                // استخدام API ديني مفتوح ومستقر
-                const res = await fetch('https://aladhan.com').then(r => r.json()); // الـ API يدعم التواريخ والبيانات الإسلامية
+        const profile = global.ninjaDatabase[sender];
+
+        // استدعاء ملف الـ API الخارجي
+        const apiEngine = require('./api.js');
+
+        switch (commandName) {
+            // 📜 قائمة الأوامر المزخرفة بالكامل
+            case 'اوامر':
+            case 'أوامر':
+            case 'menu':
+                const menuText = `✨ ━━━━━━ 🌟 *كــاكــاشــي بــوت* 🌟 ━━━━━━ ✨
+👑 *الـمـطـور:* @${global.developer}
+📌 *الـرمـز الـمـعتـمـد:* [ ${global.prefix} ]
+━━━━━━━━━━━━━━━━━━━━━━━━
+⚔️ *﹝ أواﻣِـﺮ الـقِـتـال والألْـعَـاب ﹞*
+  » ${global.prefix}شخصيتي (ملف الحساب والذهب)
+  » ${global.prefix}تدريب (لرفع طاقة الشينوبي)
+  » ${global.prefix}تخمين (لعبة أعلام الدول)
+  » ${global.prefix}سؤال (مسابقة الذكاء السريعة)
+
+💰 *﹝ أواﻣِـﺮ الـسُّـوق وَالْـجَـرَائـم ﹞*
+  » ${global.prefix}متجر (السوق السوداء والأسلحة)
+  » ${global.prefix}شراء [اسم السلاح] (تطوير هجومك)
+  » ${global.prefix}سرقة [@عضو] (نهب ذهب الأعضاء)
+
+🎥 *﹝ أواﻣِـﺮ اﻟـﻤِـﻴـديـا واﻟـﺒَـﺤْـﺚ ﹞*
+  » ${global.prefix}فيديو [رابط فيديو] (تحميل ميديا)
+  » ${global.prefix}بحث [كلمة] (البحث الذكي في الويب)
+━━━━━━━━━━━━━━━━━━━━━━━━
+🌟 *تم تفعيل معالج الأوامر المنفصل بنجاح* 🌟`;
+                await sock.sendMessage(from, { text: menuText, mentions: [global.developer + '@s.whatsapp.net'] }, { quoted: msg });
+                break;
+
+            // 🥷 نظام تطوير الشخصيات
+            case 'شخصيتي':
+                await sock.sendMessage(from, { text: `🥷 *﹝ مَـلَـف الـشِّـيـنُـوبِـي الأُسْـطُـورِي ﹞*\n\n📊 *المستوى:* [ ${profile.level} ]\n⚔️ *القوة القتالية:* [ 🛡️ ${profile.power} ]\n💰 *الذهب الحالي:* [ 🪙 ${profile.gold} ]\n🏆 *الانتصارات:* [ ${profile.wins} ]` }, { quoted: msg });
+                break;
+
+            case 'تدريب':
+                const gainedGold = Math.floor(Math.random() * 40) + 10;
+                profile.gold += gainedGold;
+                profile.power += 5;
+                await sock.sendMessage(from, { text: `🎯 *لقد خضت تدريباً شاقاً وحصلت على:*\n🪙 +${gainedGold} ذهب ملكي\n🛡️ +5 قوة قتالية إضافية!` }, { quoted: msg });
+                break;
+
+            // 🎮 نظام ألعاب الجروبات والتفاعل
+            case 'تخمين':
+                if (global.guessGame[from]) return sock.sendMessage(from, { text: "❌ هناك لعبة قائمة بالفعل!" }, { quoted: msg });
+                global.guessGame[from] = {
+                    answer: "المغرب",
+                    timeout: setTimeout(() => {
+                        if (global.guessGame[from]) {
+                            sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* الإجابة الصحيحة كانت: *المغرب* 🇲🇦` });
+                            delete global.guessGame[from];
+                        }
+                    }, 30000)
+                };
+                // سحب الصورة الآمنة من محرك الـ API الشامل
+                const flagUrl = apiEngine.getFlagApi("ma");
+                await sock.sendMessage(from, { image: { url: flagUrl }, caption: "🗺️ *خـمِّـن صُـورة الـعَـلَـم التالي لتربح الجائزة!*" }, { quoted: msg });
+                break;
+
+            case 'سؤال':
+                if (global.quizGame[from]) return sock.sendMessage(from, { text: "❌ هناك سؤال قائم بالفعل!" }, { quoted: msg });
+                const randomQuiz = quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
+                global.quizGame[from] = {
+                    answer: randomQuiz.a,
+                    timeout: setTimeout(() => {
+                        if (global.quizGame[from]) {
+                            sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* الإجابة كانت: *${randomQuiz.a}*` });
+                            delete global.quizGame[from];
+                        }
+                    }, 30000)
+                };
+                await sock.sendMessage(from, { text: `❓ *سؤال ذكاء كاكاشي:* \n\n${randomQuiz.q}\n\n⏳ أمامك 30 ثانية للإجابة مباشرة في الشات!` }, { quoted: msg });
+                break;
+
+            // 🏪 متجر الأسلحة والسوق السوداء
+            case 'متجر':
+            case 'السوق':
+                let shopLayout = `🏪 *﹝ سُـوق كَـاكَـاشِـي الـسَّـوْدَاء ﹞* 🏪\n\n🪙 ذهبك الحالي: [ ${profile.gold} ]\n`;
+                shopLayout += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                for (const [item, info] of Object.entries(blackMarket)) {
+                    shopLayout += `📦 *العنصر:* ${global.prefix}شراء ${item}\n💰 *السعر:* ${info.cost} | ⚡ *القوة:* +${info.powerBonus}\n📝 ${info.desc}\n━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+                }
+                await sock.sendMessage(from, { text: shopLayout }, { quoted: msg });
+                break;
+
+            case 'شراء':
+                if (!blackMarket[textArgs]) return sock.sendMessage(from, { text: "❌ هذا العنصر غير موجود بالمتجر!" }, { quoted: msg });
+                const item = blackMarket[textArgs];
+                if (profile.gold < item.cost) return sock.sendMessage(from, { text: `❌ ذهبك لا يكفي! تحتاج ${item.cost} ذهب.` }, { quoted: msg });
+                profile.gold -= item.cost;
+                profile.power += item.powerBonus;
+                await sock.sendMessage(from, { text: `🛍️ *تمت عملية الشراء بنجاح!* \nلقد حصلت على *${textArgs}* وزادت قوتك بمقدار +${item.powerBonus} ⚡` }, { quoted: msg });
+                break;
+
+            case 'سرقة':
+                const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+                if (!mentioned) return sock.sendMessage(from, { text: "❌ قم بعمل منشن للضحية! مثال: `.سرقة @عضو`" }, { quoted: msg });
+                if (mentioned === sender) return sock.sendMessage(from, { text: "❌ لا يمكنك سرقة نفسك!" }, { quoted: msg });
                 
-                // أذكار مدمجة سريعة لضمان استقرار السرعة
-                const azkar = [
-                    "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ ، سُبْحَانَ اللَّهِ الْعَظِيمِ ✨",
-                    "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ 🤍",
-                    "لا حَوْلَ وَلا قُوَّةَ إِلا بِاللَّهِ الْعَلِيِّ الْعَظِيمِ 🛡️",
-                    "أستغفر الله العظيم وأتوب إليه 🕋"
-                ];
-                const randomZikr = azkar[Math.floor(Math.random() * azkar.length)];
+                const success = Math.random() > 0.5;
+                if (success) {
+                    const stolen = Math.floor(Math.random() * 30) + 10;
+                    profile.gold += stolen;
+                    global.ninjaDatabase[mentioned] = global.ninjaDatabase[mentioned] || { level: 1, gold: 100, power: 50 };
+                    global.ninjaDatabase[mentioned].gold -= stolen;
+                    await sock.sendMessage(from, { text: `🥷 *سرقة ناجحة!* لقد تسللت لغرفته ونهبت منه 🪙 *${stolen}* ذهب!` }, { quoted: msg });
+                } else {
+                    profile.gold = Math.max(0, profile.gold - 20);
+                    await sock.sendMessage(from, { text: `🚨 *أمسك بك الحراس!* فشلت السرقة وتم تغريمك 🪙 *20* ذهب من حسابك!` }, { quoted: msg });
+                }
+                break;
 
-                const religionLayout = `
-╭━━━〔 🕋 *الْـقِـسْـمِ الـدِّيـنِـي* 〕━━━╮
-┃
-┃ 📿 *الذِّكْر المأثور:* 
-┃ ${randomZikr}
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
-                await sock.sendMessage(from, { text: religionLayout }, { quoted: msg });
-            } catch (e) {
-                await sock.sendMessage(from, { text: "❌ عذراً، هناك مشكلة مؤقتة في جلب البيانات الدينية." }, { quoted: msg });
-            }
-        }module.exports = {
-    name: 'ذكاء',
-    run: async (sock, from, msg, args, commandName) => {
-        if (commandName === 'ذكاء' || commandName === 'بوت') {
-            const query = args.join(" ");
-            if (!query) return sock.sendMessage(from, { text: "❌ اسألني أي شيء بعد الأمر! مثال: .بوت كيف حالك؟" }, { quoted: msg });
+            // 📡 تشغيل أوامر الـ ميديا والبحث المتصلة بملف الـ API المنفصل
+            case 'فيديو':
+                if (!textArgs) return sock.sendMessage(from, { text: "❌ يرجى وضع رابط الميديا المراد تحميلها!" }, { quoted: msg });
+                await sock.sendMessage(from, { text: "⏳ جاري تشغيل خوادم الـ API وتحميل الفيديو الخاص بك..." }, { quoted: msg });
+                const videoLink = apiEngine.getVideoDownloadApi(textArgs);
+                await sock.sendMessage(from, { video: { url: videoLink }, caption: "🎬 *تمت عملية التحميل بنجاح عبر كاكاشي API* ⚡" }, { quoted: msg });
+                break;
 
-            await sock.sendMessage(from, { text: "🤖 تفكير كاكاشي الذكي جارٍ..." }, { quoted: msg });
-
-            try {
-                // API دردشة وتفاعل سريعة ومجانية
-                const aiApi = `https://duckduckgo.com{encodeURIComponent(query)}&format=json&no_html=1`;
-                const response = await fetch(aiApi).then(res => res.json());
-                const reply = response.AbstractText || "أنا هنا معك! كود ملفاتي متطور وجاهز للرد على كل الأوامر والوظائف بدقة عالية ⚡";
-
-                await sock.sendMessage(from, { text: `🤖 *﹝ رَدّ ذَكَـاء كَـاكَـاشِـي ﹞*\n\n💬 ${reply}` }, { quoted: msg });
-            } catch (e) {
-                await sock.sendMessage(from, { text: "🤖 أنا أسمعك جيداً وجاهز لخدمتك في المجموعة في أي وقت!" }, { quoted: msg });
-            }
+            case 'بحث':
+                if (!textArgs) return sock.sendMessage(from, { text: "❌ اكتب الموضوع المراد البحث عنه!" }, { quoted: msg });
+                await sock.sendMessage(from, { text: `🔍 جاري الفحص وجلب البيانات السريعة عبر الـ API...` }, { quoted: msg });
+                const searchResult = await apiEngine.fetchSearchData(textArgs);
+                await sock.sendMessage(from, { text: `🔍 *﹝ نَـتَـائِـج الـبَـحْـثِ الـذَّكِـيِّ ﹞*\n\n📌 *الموضوع:* ${textArgs}\n📖 *الخلاصة:* ${searchResult}` }, { quoted: msg });
+                break;
         }
-    }module.exports = {
-    name: 'رتبة',
-    run: async (sock, from, msg, args) => {
-        const isGroup = from.endsWith('@g.us');
-        if (!isGroup) return sock.sendMessage(from, { text: "❌ هذا الأمر يعمل داخل المجموعات والنقابات فقط!" }, { quoted: msg });
-
-        const sender = msg.key.participant;
-        const groupMetadata = await sock.groupMetadata(from);
-        const groupAdmins = groupMetadata.participants.filter(v => v.admin !== null).map(v => v.id);
-        
-        const isAdmin = groupAdmins.includes(sender);
-        const isDeveloper = sender.includes(global.developer);
-        
-        let rank = "عضو محارب ⚔️";
-        if (isAdmin) rank = "مشرف النقابة 🛡️";
-        if (isDeveloper) rank = "مالك ومطور الروبوت 👑";
-
-        const profileLayout = `
-╭━━━〔 🎖️ *بِـطَـاقَـة رُتْـبَـة الـنَّـقَـابَـة* 〕━━━╮
-┃
-┃ 👤 *الاسم الشخصي:* @${sender.split('@')[0]}
-┃ 🏰 *اسم النقابة/الجروب:* ${groupMetadata.subject}
-┃ 🏅 *رتبتك الحالية:* [ *${rank}* ]
-┃
-╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
-
-        await sock.sendMessage(from, { text: profileLayout, mentions: [sender] }, { quoted: msg });
+    } catch (err) {
+        console.error(err);
     }
-};
+}
 
-};
-
-    }
-};
-
-
-
+module.exports = { handleCommand };
