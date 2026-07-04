@@ -168,4 +168,8 @@ async function handleCommand(sock, from, msg, body) {
     }
 }
 
-module.exports = { handleCommand };
+module.exports = { handleCommand }// تأكد أن نهاية الملف مكتوبة هكذا تماماً لتصدير الدالة بشكل سليم
+module.exports = {
+    handleCommand: handleCommand
+};
+
