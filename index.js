@@ -1,64 +1,43 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const fs = require('fs');
-const path = require('path');
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('kakachi_session');
-    
+    // تحديد مجلد حفظ جلسة الاتصال (الكريدز)
+    const { state, saveCreds } = await useMultiFileAuthState('session_auth');
+
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
-        printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '110.0.5563.147']
+        printQRInTerminal: false // تعطيل الـ QR ليعمل كود التحقق الرقمي
     });
 
+    // حفظ التحديثات الخاصة بالاعتماديات تلقائياً
     sock.ev.on('creds.update', saveCreds);
 
-    // طلب كود التحقق الرقمي تلقائياً لرقمك المغربي
+    // التحقق من طلب رمز التحقق الرقمي (Pairing Code)
     if (!sock.authState.creds.registered) {
-        const phoneNumber = "212784776925"; 
+        const phoneNumber = "212784776925"; // رقم هاتفك
+        
         setTimeout(async () => {
             try {
+                // استدعاء الـ API الداخلي للمكتبة لتوليد كود الربط
                 let code = await sock.requestPairingCode(phoneNumber);
-                code = code?.match(/.{1,4}/g)?.join('-') || code;
-                console.log('\n=============================================');
-                console.log(`🔥 كود ربط واتساب الخاص بك هو: 【 ${code} 】 🔥`);
-                console.log('=============================================\n');
-            } catch (err) {
-                console.log("❌ انتظر دقيقة ثم أعد تشغيل السكربت.");
+                code = code?.match(/.{1,4}/g)?.join("-") || code;
+                console.log(`\n========================================`);
+                console.log(`[+] كود الربط الخاص بك هو: ${code}`);
+                console.log(`========================================\n`);
+            } catch (error) {
+                console.error("خطأ أثناء طلب كود الربط:", error);
             }
-        }, 5000);
+        }, 3000); // انتظام الانتظار 3 ثوانٍ قبل الطلب
     }
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection } = update;
-        if (connection === 'close') startBot();
-        else if (connection === 'open') console.log('✨ تم تشغيل بوت كاكاشي بنجاح! ✨');
-    });
-
-    // الذكاء المسؤول عن قراءة وتنفيذ آلاف الأوامر تلقائياً دون تعديل هذا الملف
-    sock.ev.on('messages.upsert', async m => {
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-        const from = msg.key.remoteJid;
-
-        if (!text.startsWith('.')) return; // الرمز المخصص للأوامر هو نقطة
-        const args = text.slice(1).trim().split(/ +/);
-        const commandName = args.shift().toLowerCase();
-
-        // قراءة الملفات من مجلد الأوامر تلقائياً
-        const cmdPath = path.join(__dirname, 'commands', `${commandName}.js`);
-        if (fs.existsSync(cmdPath)) {
-            try {
-                const cmd = require(cmdPath);
-                await cmd.execute(sock, msg, from, args);
-            } catch (err) {
-                console.error(err);
-            }
-        }
+    // هنا يمكنك إضافة مستمع الرسائل والأوامر لاحقاً
+    sock.ev.on('messages.upsert', async chatUpdate => {
+        // إدارة الأوامر والردود تلقائياً
     });
 }
-startBot().catch(err => console.log(err));
-            
+
+startBot();
