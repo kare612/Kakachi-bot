@@ -1,21 +1,23 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('bot_session');
+    const { state, saveCreds } = await useMultiFileAuthState('kakachi_session');
     
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
-        printQRInTerminal: false
+        printQRInTerminal: false,
+        browser: ['Ubuntu', 'Chrome', '110.0.5563.147']
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // سيتم طلب كود التحقق لرقمك تلقائياً بعد تشغيل السكربت بـ 6 ثوانٍ
+    // طلب كود التحقق الرقمي تلقائياً لرقمك المغربي
     if (!sock.authState.creds.registered) {
         const phoneNumber = "212784776925"; 
-        
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
@@ -24,32 +26,39 @@ async function startBot() {
                 console.log(`🔥 كود ربط واتساب الخاص بك هو: 【 ${code} 】 🔥`);
                 console.log('=============================================\n');
             } catch (err) {
-                console.log("❌ انتهت صلاحية الطلب أو السيرفر مضغوط، انتظر دقيقة ثم أعد التشغيل.");
+                console.log("❌ انتظر دقيقة ثم أعد تشغيل السكربت.");
             }
-        }, 6000);
+        }, 5000);
     }
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startBot();
-        } else if (connection === 'open') {
-            console.log('✨ مبروك! تم تشغيل البوت بنجاح عبر كود الربط! ✨');
-        }
+        const { connection } = update;
+        if (connection === 'close') startBot();
+        else if (connection === 'open') console.log('✨ تم تشغيل بوت كاكاشي بنجاح! ✨');
     });
 
+    // الذكاء المسؤول عن قراءة وتنفيذ آلاف الأوامر تلقائياً دون تعديل هذا الملف
     sock.ev.on('messages.upsert', async m => {
-        const msg = m.messages;
+        const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
         const from = msg.key.remoteJid;
 
-        if (text === '.تست') {
-            await sock.sendMessage(from, { text: '🤖 البوت يعمل بنجاح ومستعد للأوامر!' });
+        if (!text.startsWith('.')) return; // الرمز المخصص للأوامر هو نقطة
+        const args = text.slice(1).trim().split(/ +/);
+        const commandName = args.shift().toLowerCase();
+
+        // قراءة الملفات من مجلد الأوامر تلقائياً
+        const cmdPath = path.join(__dirname, 'commands', `${commandName}.js`);
+        if (fs.existsSync(cmdPath)) {
+            try {
+                const cmd = require(cmdPath);
+                await cmd.execute(sock, msg, from, args);
+            } catch (err) {
+                console.error(err);
+            }
         }
     });
 }
-
 startBot().catch(err => console.log(err));
-  
+            
