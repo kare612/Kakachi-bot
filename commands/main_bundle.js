@@ -115,4 +115,241 @@ module.exports = {
             }
         }
     }
+};// مصفوفة تحتوي على عينة من الدول وأعلامها لإدارة اللعبة محلياً وبسرعة
+const countries = [
+    { name: 'المغرب', code: 'ma' },
+    { name: 'مصر', code: 'eg' },
+    { name: 'السعودية', code: 'sa' },
+    { name: 'الجزائر', code: 'dz' },
+    { name: 'تونس', code: 'tn' },
+    { name: 'العراق', code: 'iq' },
+    { name: 'فلسطين', code: 'ps' },
+    { name: 'الأردن', code: 'jo' },
+    { name: 'الإمارات', code: 'ae' },
+    { name: 'الكويت', code: 'kw' },
+    { name: 'قطر', code: 'qa' },
+    { name: 'اليمن', code: 'ye' },
+    { name: 'سوريا', code: 'sy' },
+    { name: 'لبنان', code: 'lb' },
+    { name: 'عمان', code: 'om' },
+    { name: 'موريتانيا', code: 'mr' },
+    { name: 'السودان', code: 'sd' },
+    { name: 'ليبيا', code: 'ly' },
+    { name: 'فرنسا', code: 'fr' },
+    { name: 'البرازيل', code: 'br' },
+    { name: 'اليابان', code: 'jp' },
+    { name: 'الأرجنتين', code: 'ar' },
+    { name: 'إسبانيا', code: 'es' },
+    { name: 'إيطاليا', code: 'it' },
+    { name: 'ألمانيا', code: 'de' }
+];
+
+// كائن لحفظ الجلسة الحالية لكل محادثة (حتى لا تتداخل الجروبات)
+global.guessGame = global.guessGame || {};
+
+module.exports = {
+    name: 'تخمين',
+    run: async (sock, from, msg, args) => {
+        // إذا كانت اللعبة تعمل بالفعل في هذا الشات
+        if (global.guessGame[from]) {
+            return sock.sendMessage(from, { text: "❌ هناك لعبة قائمة بالفعل في هذه المحادثة! خمن الإجابة أو انتظر انتهاء الوقت." }, { quoted: msg });
+        }
+
+        // اختيار دولة عشوائية من القائمة
+        const randomIndex = Math.floor(Math.random() * countries.length);
+        const targetCountry = countries[randomIndex];
+
+        // رابط الـ API المعتمد لجلب صورة العلم بجودة عالية (64x48 بكسل أو أكثر)
+        const flagImageUrl = `https://flagcdn.com{targetCountry.code}.png`;
+
+        // تسجيل بيانات اللعبة الحالية في الذاكرة
+        global.guessGame[from] = {
+            answer: targetCountry.name,
+            timeout: setTimeout(() => {
+                if (global.guessGame[from]) {
+                    sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* ولم يعرف أحد الإجابة الصحيحة.\n\n💡 الإجابة كانت: *${targetCountry.name}* 🗺️` });
+                    delete global.guessGame[from];
+                }
+            }, 30000) // وقت الإجابة 30 ثانية
+        };
+
+        // إرسال صورة العلم كرسالة تخمين مزخرفة
+        const captionText = `
+╭━━━〔 🗺️ *خـمِّـن صُـورة الـعَـلَـم* 〕━━━╮
+┃
+┃ 🔎 *أمامك 30 ثانية لمعرفة اسم الدولة!*
+┃ 📝 أرسل الإجابة مباشرة في الشات بدون رموز.
+┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+
+        await sock.sendMessage(from, { 
+            image: { url: flagImageUrl }, 
+            caption: captionText 
+        }, { quoted: msg });
+    }
 };
+    sock.ev.on('messages.upsert', async chatUpdate => {
+        try {
+            const msg = chatUpdate.messages;
+            if (!msg.message || msg.key.fromMe) return;
+
+            const from = msg.key.remoteJid;
+            const body = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+            const cleanText = body.trim();
+
+            // --- [ 1. نظام التحقق من إجابة لعبة التخمين ] ---
+            if (global.guessGame && global.guessGame[from]) {
+                const session = global.guessGame[from];
+                
+                // إذا كانت رسالة العضو تطابق اسم الدولة الصحيح
+                if (cleanText === session.answer) {
+                    clearTimeout(session.timeout); // إيقاف العداد الزمني
+                    delete global.guessGame[from]; // مسح الجلسة لإنهاء اللعبة
+                    
+                    const winText = `🎉 *إجابة صحيحة ومذهلة!* \n\nبطل النقابة الأسرع هو الذي خمن: *${cleanText}* 🏆✨`;
+                    return sock.sendMessage(from, { text: winText }, { quoted: msg });
+                }
+            }
+
+            // نظام الردود التلقائية للمطور
+            if (body.includes('مطور') || body.includes('المطور')) {
+                let devReply = `👑 *مطور البوت:* https://wa.me`;
+                return sock.sendMessage(from, { text: devReply }, { quoted: msg });
+            }
+
+            if (!body.startsWith(global.prefix)) return;
+
+            const args = body.slice(global.prefix.length).trim().split(/ +/);
+            const commandName = args.shift().toLowerCase();
+
+            // --- [ 2. تشغيل الأوامر الاعتيادية من مجلد commands ] ---
+            const commandFile = path.join(__dirname, 'commands', `${commandName}.js`);
+            if (fs.existsSync(commandFile)) {
+                const command = require(commandFile);
+                await command.run(sock, from, msg, args, commandName);
+            }
+
+        } catch (err) {
+            console.error(err);
+        }
+    });const questions = [
+    { q: "ما هو الشيء الذي يكتب ولا يقرأ؟", a: "القلم" },
+    { q: "ما هو ثاني أكسيد الكربون برمز كيميائي؟", a: "co2" },
+    { q: "عاصمة المملكة المغربية هي؟", a: "الرباط" },
+    { q: "ما هو الشيء الذي كلما زاد نقص؟", a: "العمر" }
+];
+
+global.quizGame = global.quizGame || {};
+
+module.exports = {
+    name: 'فعاليات',
+    run: async (sock, from, msg, args, commandName) => {
+        if (commandName === 'سؤال' || commandName === 'فعالية') {
+            if (global.quizGame[from]) return sock.sendMessage(from, { text: "❌ هناك سؤال قائم بالفعل!" }, { quoted: msg });
+
+            const randomQuiz = questions[Math.floor(Math.random() * questions.length)];
+            global.quizGame[from] = {
+                answer: randomQuiz.a,
+                timeout: setTimeout(() => {
+                    if (global.quizGame[from]) {
+                        sock.sendMessage(from, { text: `⏰ *انتهى الوقت!* \n💡 الإجابة الصحيحة هي: *${randomQuiz.a}*` });
+                        delete global.quizGame[from];
+                    }
+                }, 30000)
+            };
+
+            const quizLayout = `
+╭━━━〔 🧠 *أَسْـئِـلَـة ذَكَــاء كَـاكَـاشِـي* 〕━━━╮
+┃
+┃ ❓ *السؤال:* ${randomQuiz.q}
+┃ ⏳ *الوقت:* 30 ثانية للإجابة مباشرة.
+┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+            await sock.sendMessage(from, { text: quizLayout }, { quoted: msg });
+        }
+    }
+};module.exports = {
+    name: 'ديني',
+    run: async (sock, from, msg, args, commandName) => {
+        if (commandName === 'ذكر' || commandName === 'اية') {
+            try {
+                // استخدام API ديني مفتوح ومستقر
+                const res = await fetch('https://aladhan.com').then(r => r.json()); // الـ API يدعم التواريخ والبيانات الإسلامية
+                
+                // أذكار مدمجة سريعة لضمان استقرار السرعة
+                const azkar = [
+                    "سُبْحَانَ اللَّهِ وَبِحَمْدِهِ ، سُبْحَانَ اللَّهِ الْعَظِيمِ ✨",
+                    "اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ 🤍",
+                    "لا حَوْلَ وَلا قُوَّةَ إِلا بِاللَّهِ الْعَلِيِّ الْعَظِيمِ 🛡️",
+                    "أستغفر الله العظيم وأتوب إليه 🕋"
+                ];
+                const randomZikr = azkar[Math.floor(Math.random() * azkar.length)];
+
+                const religionLayout = `
+╭━━━〔 🕋 *الْـقِـسْـمِ الـدِّيـنِـي* 〕━━━╮
+┃
+┃ 📿 *الذِّكْر المأثور:* 
+┃ ${randomZikr}
+┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+                await sock.sendMessage(from, { text: religionLayout }, { quoted: msg });
+            } catch (e) {
+                await sock.sendMessage(from, { text: "❌ عذراً، هناك مشكلة مؤقتة في جلب البيانات الدينية." }, { quoted: msg });
+            }
+        }module.exports = {
+    name: 'ذكاء',
+    run: async (sock, from, msg, args, commandName) => {
+        if (commandName === 'ذكاء' || commandName === 'بوت') {
+            const query = args.join(" ");
+            if (!query) return sock.sendMessage(from, { text: "❌ اسألني أي شيء بعد الأمر! مثال: .بوت كيف حالك؟" }, { quoted: msg });
+
+            await sock.sendMessage(from, { text: "🤖 تفكير كاكاشي الذكي جارٍ..." }, { quoted: msg });
+
+            try {
+                // API دردشة وتفاعل سريعة ومجانية
+                const aiApi = `https://duckduckgo.com{encodeURIComponent(query)}&format=json&no_html=1`;
+                const response = await fetch(aiApi).then(res => res.json());
+                const reply = response.AbstractText || "أنا هنا معك! كود ملفاتي متطور وجاهز للرد على كل الأوامر والوظائف بدقة عالية ⚡";
+
+                await sock.sendMessage(from, { text: `🤖 *﹝ رَدّ ذَكَـاء كَـاكَـاشِـي ﹞*\n\n💬 ${reply}` }, { quoted: msg });
+            } catch (e) {
+                await sock.sendMessage(from, { text: "🤖 أنا أسمعك جيداً وجاهز لخدمتك في المجموعة في أي وقت!" }, { quoted: msg });
+            }
+        }
+    }module.exports = {
+    name: 'رتبة',
+    run: async (sock, from, msg, args) => {
+        const isGroup = from.endsWith('@g.us');
+        if (!isGroup) return sock.sendMessage(from, { text: "❌ هذا الأمر يعمل داخل المجموعات والنقابات فقط!" }, { quoted: msg });
+
+        const sender = msg.key.participant;
+        const groupMetadata = await sock.groupMetadata(from);
+        const groupAdmins = groupMetadata.participants.filter(v => v.admin !== null).map(v => v.id);
+        
+        const isAdmin = groupAdmins.includes(sender);
+        const isDeveloper = sender.includes(global.developer);
+        
+        let rank = "عضو محارب ⚔️";
+        if (isAdmin) rank = "مشرف النقابة 🛡️";
+        if (isDeveloper) rank = "مالك ومطور الروبوت 👑";
+
+        const profileLayout = `
+╭━━━〔 🎖️ *بِـطَـاقَـة رُتْـبَـة الـنَّـقَـابَـة* 〕━━━╮
+┃
+┃ 👤 *الاسم الشخصي:* @${sender.split('@')[0]}
+┃ 🏰 *اسم النقابة/الجروب:* ${groupMetadata.subject}
+┃ 🏅 *رتبتك الحالية:* [ *${rank}* ]
+┃
+╰━━━━━━━━━━━━━━━━━━━━━━━━╯`;
+
+        await sock.sendMessage(from, { text: profileLayout, mentions: [sender] }, { quoted: msg });
+    }
+};
+
+};
+
+    }
+};
+
+
+
