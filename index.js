@@ -140,7 +140,24 @@ async function startBot() {
     // إعادة الاتصال الذكي
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
+    const { handleCommand } = require('./commands.js');
+
+sock.ev.on('messages.upsert', async chatUpdate => {
+    try {
+        const msg = chatUpdate.messages[0]; // قراءة الرسالة الأولى المباشرة
+        if (!msg.message || msg.key.fromMe) return;
+
+        const from = msg.key.remoteJid;
+        const body = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+
+        // تشغيل المعالج الشامل فوراً
+        await handleCommand(sock, from, msg, body);
+
+    } catch (err) {
+        console.error("خطأ في استقبال الرسالة:", err);
+    }
+});
+    if (connection === 'close') {
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
