@@ -45,19 +45,24 @@ async function startBot() {
     // إدارة تدفق الرسائل والأوامر والردود الشاملة
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
+            // التحقق الجذري من صحة وصول حزمة الرسالة لضمان الرد
+            if (chatUpdate.type !== 'notify') return;
             const msg = chatUpdate.messages[0];
-            if (!msg || !msg.message || msg.key.fromMe) return;
+            if (!msg || !msg.message) return;
+            if (msg.key.fromMe) return; // منع البوت من الرد على نفسه
 
             const from = msg.key.remoteJid;
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? msg.key.participant : from;
 
+            // استخراج فوري وشامل لجميع صيغ النصوص الممكنة للرسالة منعاً للصمت
             const body = msg.message.conversation || 
                          msg.message.extendedTextMessage?.text || 
-                         msg.message.imageMessage?.caption || "";
+                         msg.message.imageMessage?.caption || 
+                         msg.message.videoMessage?.caption || "";
             const cleanText = body.trim();
 
-            // 1. معالج الردود التلقائية والألعاب
+            // 1. معالج الردود التلقائية والألعاب الفورية
             if (global.guessGame && global.guessGame[from]) {
                 if (cleanText === global.guessGame[from].answer) {
                     clearTimeout(global.guessGame[from].timeout);
@@ -83,7 +88,7 @@ async function startBot() {
                 return sock.sendMessage(from, { text: `وعليكم السلام ورحمة الله وبركاته! اكتب \`.اوامر\` لتكتشف ميزاتي الأسطورية ⚡🥷` }, { quoted: msg });
             }
 
-            // 2. معالج الأوامر (.Prefix)
+            // 2. معالج الأوامر التي تبدأ بنقطة (.Prefix)
             if (!body.startsWith(global.prefix)) return;
 
             const args = body.slice(global.prefix.length).trim().split(/ +/);
@@ -183,9 +188,9 @@ async function startBot() {
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
         if (connection === 'close') startBot();
-        else if (connection === 'open') console.log('[+] كاكاشي بوت متصل ومستقر ويعمل بنظام الرد الموحد!');
+        else if (connection === 'open') console.log('[+] كاكاشي بوت متصل ومستقر ويعمل بنظام الرد الموحد الجديد!');
     });
 }
 
 startBot();
-                                           
+                                                  
