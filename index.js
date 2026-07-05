@@ -2,8 +2,8 @@ const makeWASocket = require('@whiskeysockets/baileys').default;
 const { useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
-// الاعدادات العامة
-global.developer = "212784776925"; 
+// الاعدادات العامة الشاملة
+global.developer = "212784776925"; // الرقم الدولي مضاف له كود الدولة مباشرة
 global.prefix = "."; 
 global.ninjaDatabase = global.ninjaDatabase || {};
 global.guessGame = global.guessGame || {};
@@ -25,11 +25,13 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // نظام طلب كود الربط الرقمي لـ Termux
+    // نظام ذكي لطلب كود الربط وتفادي الحظر المؤقت والخطأ المتكرر
     if (!sock.authState.creds.registered) {
         console.log("----------------------------------------");
-        console.log("⏳ Connecting to WhatsApp servers...");
+        console.log("⏳ Connecting to WhatsApp servers with exact international number...");
         console.log("----------------------------------------");
+        
+        // زيادة وقت الانتظار لـ 12 ثانية لإعطاء السوكت فرصة الاستقرار التام والكامل
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(global.developer);
@@ -38,15 +40,28 @@ async function startBot() {
                 console.log(`[+] YOUR PAIRING CODE: ${code}`);
                 console.log(`========================================\n`);
             } catch (error) {
-                console.error("Error generating pairing code. Retrying...");
+                console.log("⚠️ Sockets busy or rate-limited. Waiting 15 seconds before smart retry...");
+                
+                // إعادة محاولة ذكية بعد 15 ثانية إضافية لتفادي ضغط الخادم (Rate-limit)
+                setTimeout(async () => {
+                    try {
+                        let code = await sock.requestPairingCode(global.developer);
+                        code = code?.match(/.{1,4}/g)?.join("-") || code;
+                        console.log(`\n========================================`);
+                        console.log(`[+] YOUR PAIRING CODE (Retry): ${code}`);
+                        console.log(`========================================\n`);
+                    } catch (err) {
+                        console.error("❌ Link failed. Please check your internet, restart Termux and try again later.");
+                    }
+                }, 15000);
             }
-        }, 8000); 
+        }, 12000); 
     }
 
     // ادارة تدفق الرسائل والاوامر والردود الشاملة
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
-            const msg = chatUpdate.messages[0];
+            const msg = chatUpdate.messages;
             if (!msg || !msg.message || msg.key.fromMe) return;
 
             const from = msg.key.remoteJid;
@@ -58,7 +73,7 @@ async function startBot() {
                          msg.message.imageMessage?.caption || "";
             const cleanText = body.trim();
 
-            // 1. معالج الردود التلقائية والالعاب
+            // معالج الردود التلقائية والالعاب
             if (global.guessGame && global.guessGame[from]) {
                 if (cleanText === global.guessGame[from].answer) {
                     clearTimeout(global.guessGame[from].timeout);
@@ -76,7 +91,7 @@ async function startBot() {
                 return sock.sendMessage(from, { text: `وعليكم السلام ورحمة الله وبركاته! اكتب \`.اوامر\` لتكتشف ميزاتي الأسطورية ⚡🥷` }, { quoted: msg });
             }
 
-            // 2. معالج الاوامر (.Prefix)
+            // معالج الاوامر (.Prefix)
             if (!body.startsWith(global.prefix)) return;
 
             const args = body.slice(global.prefix.length).trim().split(/ +/);
@@ -93,15 +108,15 @@ async function startBot() {
                 case 'أوامر':
                 case 'menu':
                     const menuText = `✨ ━━━━━━ 🌟 *كــاكــاشــي بــوت* 🌟 ━━━━━━ ✨
-👑 *الـمـطـور:* @${global.developer}
+👑 *الـم_طـور:* @${global.developer}
 📌 *الـرمـز الـمـعتـمـد:* [ ${global.prefix} ]
 ━━━━━━━━━━━━━━━━━━━━━━━━
-⚔️ *﹝ أواﻣِـﺮ الـقِـتـال والألْـعَـاب ﹞*
+⚔️ *﹝ أواﻣِـﺮ الـقِـتـال والألْ...عَـآب ﹞*
   » ${global.prefix}شخصيتي (ملف الحساب والذهب)
   » ${global.prefix}تدريب (لرفع طاقة الشينوبي)
   » ${global.prefix}تخمين (لعبة أعلام الدول)
 
-🎥 *﹝ أواﻣِـﺮ اﻟـﻤِـﻴـديـا واﻟ...بَـحْـﺚ ﹞*
+🎥 *﹝ أواﻣِـﺮ اﻟ...مِـﻴـديـا وَاﻟـبَـحْـث ﹞*
   » ${global.prefix}فيديو [رابط فيديو] (تحميل ميديا)
   » ${global.prefix}بحث [كلمة] (البحث الذكي في الويب)
 ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -165,4 +180,4 @@ async function startBot() {
 }
 
 startBot();
-                                                  
+        
