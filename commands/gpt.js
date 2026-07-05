@@ -19,3 +19,9 @@ module.exports = {
         }
     }
 };
+module.exports = {
+    name: 'اوامر',
+    run: async (sock, from, msg, args) => {
+        await sock.sendMessage(from, { text: "🥷 مرحباً بك في قائمة أوامر كاكاشي بـوت! الأوامر شغالة بنسبة 100% عبر المجلدات المنفصلة." }, { quoted: msg });
+    }
+};
