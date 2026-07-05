@@ -1,31 +1,24 @@
-/**
- * ملف إدارة الـ APIs والمحركات الخارجية لكاكاشي بوت
- */
+const axios = require('axios');
 
-// 1. رابط جلب ميديا صور أعلام الدول للألعاب التفاعلية
-function getFlagApi(countryCode) {
-    return `https://flagcdn.com{countryCode.toLowerCase()}.png`;
-}
-
-// 2. رابط جلب وتحميل الفيديوهات عبر الـ API المباشر
-function getVideoDownloadApi(videoUrl) {
-    return `https://screenshotlayer.com{encodeURIComponent(videoUrl)}`;
-}
-
-// 3. دالة الاتصال بالويب وجلب خلاصة الموسوعات للبحث الذكي
-async function fetchSearchData(query) {
+// دالة لجلب معلومات أو ردود ذكاء اصطناعي
+async function getChatbotResponse(text) {
     try {
-        const response = await fetch(`https://duckduckgo.com{encodeURIComponent(query)}&format=json&no_html=1`);
-        const data = await response.json();
-        return data.AbstractText || "❌ لم أجد خلاصة موسوعية كافية لهذا الموضوع، يرجى كتابة موضوع بحث آخر بدقة.";
+        const res = await axios.get(`https://simsimi.net{encodeURIComponent(text)}&lc=ar`);
+        return res.data.success || "لم أفهم ذلك";
     } catch (error) {
-        console.error("خطأ خادم البحث الـ API:", error);
-        return "❌ عذراً، هناك انقطاع مؤقت في خادم جلب الـ API الخارجي للبحث.";
+        return "خطأ في الاتصال بالخادم";
     }
 }
 
-module.exports = {
-    getFlagApi,
-    getVideoDownloadApi,
-    fetchSearchData
-};
+// دالة لتحميل فيديوهات تيك توك كمثال
+async function downloadTikTok(url) {
+    try {
+        // ضع هنا رابط الـ API الخاص بالتحميل الذي تستخدمه
+        const res = await axios.get(`https://example.com{encodeURIComponent(url)}`);
+        return res.data.videoUrl; 
+    } catch (error) {
+        return null;
+    }
+}
+
+module.exports = { getChatbotResponse, downloadTikTok };
