@@ -1,24 +1,24 @@
-const axios = require('axios');
+function getFlagApi(countryCode) {
+    return `https://flagcdn.com{countryCode.toLowerCase()}.png`;
+}
 
-// دالة لجلب معلومات أو ردود ذكاء اصطناعي
-async function getChatbotResponse(text) {
+function getVideoDownloadApi(videoUrl) {
+    return `https://screenshotlayer.com{encodeURIComponent(videoUrl)}`;
+}
+
+async function fetchSearchData(query) {
     try {
-        const res = await axios.get(`https://simsimi.net{encodeURIComponent(text)}&lc=ar`);
-        return res.data.success || "لم أفهم ذلك";
+        const response = await fetch(`https://duckduckgo.com{encodeURIComponent(query)}&format=json&no_html=1`);
+        const data = await response.json();
+        return data.AbstractText || "❌ لم يتم العثور على خلاصة موسوعية كافية لهذا الموضوع.";
     } catch (error) {
-        return "خطأ في الاتصال بالخادم";
+        return "❌ عذراً، هناك انقطاع مؤقت في خادم جلب الـ API الخارجي للبحث.";
     }
 }
 
-// دالة لتحميل فيديوهات تيك توك كمثال
-async function downloadTikTok(url) {
-    try {
-        // ضع هنا رابط الـ API الخاص بالتحميل الذي تستخدمه
-        const res = await axios.get(`https://example.com{encodeURIComponent(url)}`);
-        return res.data.videoUrl; 
-    } catch (error) {
-        return null;
-    }
-}
+module.exports = {
+    getFlagApi,
+    getVideoDownloadApi,
+    fetchSearchData
+};
 
-module.exports = { getChatbotResponse, downloadTikTok };
