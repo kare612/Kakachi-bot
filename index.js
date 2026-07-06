@@ -1,113 +1,70 @@
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
-// الإعدادات الثابتة للبوت
-global.developer = "212784776925"; 
-global.prefix = "."; 
-global.ninjaDatabase = global.ninjaDatabase || {};
+// رقم الهاتف الخاص بك الذي زودتني به
+const phoneNumber = "212784776925"; 
 
 async function startBot() {
-    // استخدام مجلد جديد كلياً لتفادي تداخل الكاش القديم
-    const { state, saveCreds } = await useMultiFileAuthState('session_auth_clean');
-    
+    // حفظ الجلسة في مجلد auth_info لمنع تسجيل الخروج
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+
     const sock = makeWASocket({
-        logger: pino({ level: 'silent' }),
         auth: state,
-        printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'), // محرك كروم مستقر جداً
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000
+        printQRInTerminal: false, // تعطيل الـ QR كلياً
+        logger: pino({ level: 'silent' }) // إخفاء سجلات النظام المزعجة
     });
 
-    sock.ev.on('creds.update', saveCreds);
-
-    // طلب كود واحد فقط نظيف وجديد تماماً
+    // طلب كود الربط الرقمي إذا لم يكن مسجلاً مسبقاً
     if (!sock.authState.creds.registered) {
-        console.log("----------------------------------------");
-        console.log("⏳ Requesting a FRESH and SINGLE pairing code...");
-        console.log("----------------------------------------");
-        
         setTimeout(async () => {
             try {
-                let code = await sock.requestPairingCode(String(global.developer));
-                code = code?.match(/.{1,4}/g)?.join("-") || code;
+                let code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n========================================`);
-                console.log(`[+] كود الربط النظيف والوحيد هو: ${code}`);
+                console.log(`🔑 كود الربط الخاص بك هو: ${code}`);
                 console.log(`========================================\n`);
+                console.log(`👉 افتح الواتساب > الأجهزة المرتبطة > ربط هاتف آخر > ربط برقم الهاتف واستخدم الكود أعلاه.`);
             } catch (error) {
-                console.log("❌ خوادم واتساب فرضت حظراً مؤقتاً بسبب كثرة الأكواد. يرجى الانتظار 3 دقائق ثم المحاولة مجدداً.");
+                console.error("خطأ أثناء طلب كود الربط:", error);
             }
-        }, 10000); // انتظام 10 ثوانٍ لتهيئة الاتصال بشكل كامل ومستقر أولاً
+        }, 3000); // مهلة للتأكد من اتصال السيرفر
     }
 
-    // معالج الرسائل والأوامر والردود الشاملة والتحكم
-    sock.ev.on('messages.upsert', async chatUpdate => {
-        try {
-            const msg = chatUpdate.messages[0];
-            if (!msg || !msg.message || msg.key.fromMe) return;
+    // الاستماع للرسائل الواردة والرد عليها (الأوامر)
+    sock.ev.on('messages.upsert', async (m) => {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return; // تجاهل الرسائل الفارغة أو المرسلة منك
 
-            const from = msg.key.remoteJid;
-            const isGroup = from.endsWith('@g.us');
-            const sender = isGroup ? msg.key.participant : from;
+        const from = msg.key.remoteJid;
+        // جلب نص الرسالة سواء كانت نص عادي أو نص من زر/قائمة
+        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
 
-            const body = msg.message.conversation || 
-                         msg.message.extendedTextMessage?.text || 
-                         msg.message.imageMessage?.caption || "";
-            const cleanText = body.trim();
+        console.log(`رسالة جديدة من [${from}]: ${text}`);
 
-            if (body.includes('مطور') || body.includes('المطور')) {
-                return sock.sendMessage(from, { text: `👑 *﹝ قِـسْـمِ إِدَارَة كَـاكَـاشِـي بُـوت ﹞*\n\n👋 للتواصل المباشر مع المطور:\n🔗 https://wa.me` }, { quoted: msg });
-            }
-
-            if (!body.startsWith(global.prefix)) return;
-
-            const args = body.slice(global.prefix.length).trim().split(/ +/);
-            const command = args.shift().toLowerCase();
-            const textArgs = args.join(" ");
-
-            if (!global.ninjaDatabase[sender]) {
-                global.ninjaDatabase[sender] = { level: 1, gold: 100, power: 50 };
-            }
-            const profile = global.ninjaDatabase[sender];
-
-            switch (command) {
-                case 'اوامر':
-                case 'أوامر':
-                    const menuText = `🎨 ━━━━━━ 👑 *كــاكــاشــي الــمُــطَــوَّر* 👑 ━━━━━━ 🎨
-👑 *الـمـطـور:* @${global.developer}
-📌 *الـرمـز الـمـعتـمـد:* [ ${global.prefix} ]
-━━━━━━━━━━━━━━━━━━━━━━━━
-  » ${global.prefix}شخصيتي (ملف الحساب والذهب)
-  » ${global.prefix}تدريب (لرفع طاقة الشينوبي)
-  » ${global.prefix}قفل (إغلاق الجات للنخبة فقط)
-  » ${global.prefix}فتح (فتح الجات لعامة الأعضاء)
-━━━━━━━━━━━━━━━━━━━━━━━━
-🌟 *تم تفعيل نظام الكود الموحد والنظيف* 🌟`;
-                    await sock.sendMessage(from, { text: menuText, mentions: [global.developer + '@s.whatsapp.net'] }, { quoted: msg });
-                    break;
-
-                case 'شخصيتي':
-                    await sock.sendMessage(from, { text: `🥷 *﹝ مَـلَـف الـشِّـيـنُـوبِـي الأُسْـطُـورِي ﹞*\n\n📊 *المستوى:* [ ${profile.level} ]\n⚔️ *القوة:* [ 🛡️ ${profile.power} ]\n💰 *الذهب:* [ 🪙 ${profile.gold} ]` }, { quoted: msg });
-                    break;
-
-                case 'تدريب':
-                    profile.gold += 30;
-                    profile.power += 5;
-                    await sock.sendMessage(from, { text: `🎯 خضت تدريباً وحصلت على الذهب والقوة بنجاح!` }, { quoted: msg });
-                    break;
-            }
-        } catch (err) {
-            console.error(err);
+        // 👇 هنا يمكنك إضافة وتعديل الأوامر والردود كما تريد 👇
+        if (text.toLowerCase() === 'السلام عليكم') {
+            await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك في البوت.' });
+        } 
+        else if (text.toLowerCase() === 'الاوامر' || text.toLowerCase() === 'أوامر') {
+            await sock.sendMessage(from, { text: '📜 قائمة الأوامر المتاحة:\n1. السلام عليكم\n2. المطور' });
+        } 
+        else if (text.toLowerCase() === 'المطور') {
+            await sock.sendMessage(from, { text: 'مطور هذا البوت هو صاحب الرقم: +212784776925' });
         }
     });
 
+    // حفظ التغييرات على الجلسة بشكل تلقائي
+    sock.ev.on('creds.update', saveCreds);
+
+    // إعادة الاتصال التلقائي في حال الانقطاع
     sock.ev.on('connection.update', (update) => {
         const { connection } = update;
-        if (connection === 'close') startBot();
-        else if (connection === 'open') console.log('[+] Connected successfully!');
+        if (connection === 'close') {
+            console.log('🔄 تم قطع الاتصال، جاري إعادة التشغيل...');
+            startBot();
+        } else if (connection === 'open') {
+            console.log('✅ تم اتصال البوت بنجاح وهو جاهز للرد الآن!');
+        }
     });
 }
 
 startBot();
-        
