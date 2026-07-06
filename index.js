@@ -6,49 +6,48 @@ const {
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
-// رقم الهاتف الخاص بك مع رمز الدولة
+// رقم الهاتف الخاص بك الموثق للربط
 const phoneNumber = "212784776925"; 
 
 async function startBot() {
-    // إعداد وتخزين ملفات الجلسة
+    // إعداد مسار حفظ الجلسة لمنع تسجيل الخروج التلقائي
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // الاعتماد الكلي على كود الربط الرقمي
-        logger: pino({ level: 'silent' }), // إيقاف الرسائل والنصوص المزعجة
+        printQRInTerminal: false, // تعطيل نظام الـ QR تماماً للعمل عبر الكود
+        logger: pino({ level: 'silent' }), // كتم النصوص البرمجية الزائدة
         
-        // 🔒 إعدادات متطورة لتخطي حماية واتساب ومنع ظهور خطأ 428
+        // 🔒 إعداد أمني أساسي لإيهام الخادم بالاتصال من متصفح نظام لينكس رسمي
         browser: Browsers.ubuntu('Chrome'), 
-        syncFullHistory: false, // تعطيل جلب أرشيف الرسائل القديمة لسرعة الاتصال وثباته
+        syncFullHistory: false, // تقليل حجم البيانات المرسلة منعاً لقطع الاتصال المفاجئ
         markOnlineOnConnect: true
     });
 
-    // طلب كود الربط الرقمي من السيرفر عند أول تشغيل
+    // طلب كود الربط الرقمي من السيرفر لأول مرة
     if (!sock.authState.creds.registered) {
-        // تأخير عشوائي مابين 4 إلى 6 ثوانٍ لتهيئة قنوات الاتصال بأمان قبل الطلب
-        const delayMs = 4000 + Math.floor(Math.random() * 2000);
-        console.log(`⏳ جاري تهيئة الاتصال الأمن.. يرجى الانتظار ${delayMs / 1000} ثوانٍ...`);
+        // تأخير زمني مستقر بمقدار 5 ثوانٍ لضمان اكتمال تهيئة منافذ الاتصال الأمنية
+        console.log(`⏳ جاري تهيئة الاتصال الآمن مع السيرفر.. يرجى الانتظار 5 ثوانٍ...`);
         
         setTimeout(async () => {
             try {
                 let code = await sock.requestPairingCode(phoneNumber);
                 console.log(`\n========================================`);
-                console.log(`🔑 كود الربط الرقمي الخص بك: ${code}`);
+                console.log(`🔑 كود الربط الرقمي الخاص بك هو: ${code}`);
                 console.log(`========================================\n`);
-                console.log(`👉 افتح واتساب هاتف > الأجهزة المرتبطة > ربط هاتف آخر > ربط برقم الهاتف وأدخل الكود الموضح أعلاه.`);
+                console.log(`👉 افتح الواتساب > الأجهزة المرتبطة > ربط هاتف آخر > ربط برقم الهاتف واستخدم الكود أعلاه.`);
             } catch (error) {
-                console.error("❌ فشل طلب الكود مجدداً، تأكد من إغلاق أي جلسات واتساب ويب نشطة وجرب لاحقاً:", error.message);
+                console.error("❌ فشل طلب كود الربط، يرجى المحاولة مرة أخرى لاحقاً:", error.message);
             }
-        }, delayMs);
+        }, 5000);
     }
 
-    // حفظ بيانات تسجيل الدخول تلقائياً
+    // حفظ بيانات الاعتماد تلقائياً فور إدخال الكود
     sock.ev.on('creds.update', saveCreds);
 
-    // 📩 نظام الرد التلقائي والأوامر البرمجية للبوت
+    // 📩 محرك الردود التلقائية والأوامر البرمجية للبوت
     sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
+        const msg = m.messages;
         if (!msg.message || msg.key.fromMe) return; 
 
         const from = msg.key.remoteJid;
@@ -56,11 +55,11 @@ async function startBot() {
 
         console.log(`📩 رسالة واردة من [${from}]: ${text}`);
 
-        // الأوامر البرمجية المتاحة (يمكنك نسخ الشروط وإضافة المزيد بسهولة)
+        // قسم تخصيص الأوامر والردود التلقائية
         if (text === 'السلام عليكم') {
             await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك في البوت الذكي 🤖✨' });
         } 
-        else if (text === 'الاوامر' || text === 'أوامر') {
+        else if (text.toLowerCase() === 'الاوامر' || text === 'أوامر') {
             await sock.sendMessage(from, { text: '📜 قائمة الأوامر المتاحة:\n1. السلام عليكم\n2. المطور\n3. تفعيل' });
         } 
         else if (text === 'المطور') {
@@ -71,17 +70,17 @@ async function startBot() {
         }
     });
 
-    // 🔄 مراقبة حالة السيرفر وإعادة الاتصال عند الطوارئ
+    // 🔄 فحص ومراقبة حالة السيرفر وإعادة التشغيل عند الطوارئ
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
-                console.log('🔄 انقطع الاتصال مؤقتاً، جاري إعادة التشغيل التلقائي...');
+                console.log('🔄 انقطع الاتصال مؤقتاً، جاري إعادة التشغيل التلقائي واختبار السيرفر...');
                 startBot(); 
             } else {
-                console.log('❌ تم إيقاف الجلسة أو طرد البوت، يجب مسح مجلد auth_info وإعادة الربط.');
+                console.log('❌ تم إيقاف الجلسة أو تسجيل الخروج، يجب مسح مجلد auth_info والربط مجدداً.');
             }
         } else if (connection === 'open') {
             console.log('✅ تم تشغيل البوت بنجاح! هو الآن نشط وجاهز للرد التلقائي على الرسائل.');
@@ -89,5 +88,5 @@ async function startBot() {
     });
 }
 
-// بدء التشغيل الفعلي للملف
+// بدء التشغيل الفعلي
 startBot();
