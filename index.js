@@ -1,20 +1,28 @@
-const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    Browsers 
+} = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
-// رقم الهاتف الخاص بك الذي زودتني به
+// رقم الهاتف الخاص بك مع رمز الدولة
 const phoneNumber = "212784776925"; 
 
 async function startBot() {
-    // حفظ الجلسة في مجلد auth_info لمنع تسجيل الخروج
+    // إنشاء أو جلب الجلسة من مجلد auth_info
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // تعطيل الـ QR كلياً
-        logger: pino({ level: 'silent' }) // إخفاء سجلات النظام المزعجة
+        printQRInTerminal: false, // تعطيل الـ QR تماماً والاعتماد على الكود
+        logger: pino({ level: 'silent' }), // إخفاء الرسائل المزعجة في الترمينال
+        
+        // 🛠️ أهم سطر لتفادي خطأ 428 (يوهم خوادم واتساب بأنه متصفح كروم رسمي)
+        browser: Browsers.macOS('Desktop') 
     });
 
-    // طلب كود الربط الرقمي إذا لم يكن مسجلاً مسبقاً
+    // طلب كود الربط الرقمي إذا لم يكن الحساب مسجلاً مسبقاً
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
@@ -24,47 +32,59 @@ async function startBot() {
                 console.log(`========================================\n`);
                 console.log(`👉 افتح الواتساب > الأجهزة المرتبطة > ربط هاتف آخر > ربط برقم الهاتف واستخدم الكود أعلاه.`);
             } catch (error) {
-                console.error("خطأ أثناء طلب كود الربط:", error);
+                console.error("❌ فشل طلب كود الربط، تأكد من تحديث المكتبة وحذف مجلد auth_info:", error);
             }
-        }, 3000); // مهلة للتأكد من اتصال السيرفر
+        }, 4000); // مهلة 4 ثوانٍ للتأكد من استقرار الاتصال قبل طلب الكود
     }
 
-    // الاستماع للرسائل الواردة والرد عليها (الأوامر)
+    // حفظ التغييرات على الجلسة بشكل تلقائي عند الربط
+    sock.ev.on('creds.update', saveCreds);
+
+    // 📩 الاستماع للرسائل الواردة والرد عليها تلقائياً
     sock.ev.on('messages.upsert', async (m) => {
         const msg = m.messages[0];
         if (!msg.message || msg.key.fromMe) return; // تجاهل الرسائل الفارغة أو المرسلة منك
 
         const from = msg.key.remoteJid;
-        // جلب نص الرسالة سواء كانت نص عادي أو نص من زر/قائمة
+        // جلب نص الرسالة بأكثر من طريقة لضمان قراءتها
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
 
-        console.log(`رسالة جديدة من [${from}]: ${text}`);
+        console.log(`📩 رسالة جديدة من [${from}]: ${text}`);
 
-        // 👇 هنا يمكنك إضافة وتعديل الأوامر والردود كما تريد 👇
+        // 🤖 قسم الأوامر والرد التلقائي (عدل وضف ما تشاء هنا)
         if (text.toLowerCase() === 'السلام عليكم') {
-            await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك في البوت.' });
+            await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك في البوت 🤖✨' });
         } 
         else if (text.toLowerCase() === 'الاوامر' || text.toLowerCase() === 'أوامر') {
-            await sock.sendMessage(from, { text: '📜 قائمة الأوامر المتاحة:\n1. السلام عليكم\n2. المطور' });
+            await sock.sendMessage(from, { text: '📜 قائمة الأوامر المتاحة:\n1. السلام عليكم\n2. المطور\n3. تفعيل' });
         } 
         else if (text.toLowerCase() === 'المطور') {
-            await sock.sendMessage(from, { text: 'مطور هذا البوت هو صاحب الرقم: +212784776925' });
+            await sock.sendMessage(from, { text: '👤 مطور هذا البوت هو صاحب الرقم: +212784776925' });
+        }
+        else if (text.toLowerCase() === 'تفعيل') {
+            await sock.sendMessage(from, { text: '✅ تم تفعيل البوت بنجاح في هذه المجموعة/الدردشة.' });
         }
     });
 
-    // حفظ التغييرات على الجلسة بشكل تلقائي
-    sock.ev.on('creds.update', saveCreds);
-
-    // إعادة الاتصال التلقائي في حال الانقطاع
+    // 🔄 مراقبة حالة الاتصال وإعادة التشغيل الذكي عند الانقطاع
     sock.ev.on('connection.update', (update) => {
-        const { connection } = update;
+        const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
-            console.log('🔄 تم قطع الاتصال، جاري إعادة التشغيل...');
-            startBot();
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('🔄 تم قطع الاتصال بسبب: ', lastDisconnect?.error, ' | جاري إعادة المحاولة: ', shouldReconnect);
+            
+            if (shouldReconnect) {
+                startBot(); // إعادة تشغيل البوت تلقائياً
+            } else {
+                console.log('❌ تم تسجيل الخروج من الهاتف، يجب عليك حذف مجلد auth_info والربط من جديد.');
+            }
         } else if (connection === 'open') {
-            console.log('✅ تم اتصال البوت بنجاح وهو جاهز للرد الآن!');
+            console.log('✅ تم اتصال البوت بنجاح وهو يعمل الآن دون مشاكل!');
         }
     });
 }
 
+// تشغيل البوت للمرة الأولى
 startBot();
+                
