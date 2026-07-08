@@ -1,103 +1,67 @@
 const { 
     default: makeWASocket, 
     useMultiFileAuthState, 
-    DisconnectReason, 
     Browsers 
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
-// رقم الهاتف الخاص بك والمعتمد في المستودع
-const phoneNumber = "212784776925"; 
-
-async function startBot() {
-    // إنشاء أو قراءة مجلد حفظ الجلسة
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+async function connectToWhatsApp() {
+    // إنشاء مجلد لحفظ الجلسة حتى لا يطلب الكود في كل مرة
+    const { state, saveCreds } = await useMultiFileAuthState('./session_kakashi');
 
     const sock = makeWASocket({
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false, // ❌ تم إيقاف الـ QR نهائياً
         auth: state,
-        printQRInTerminal: false, // الاعتماد الكلي على الكود الرقمي
-        logger: pino({ level: 'silent' }), // كتم النصوص الزائدة
-        
-        // 🔒 تحديث المتصفح إلى نسخة موثوقة (Chrome على Mac) لتفادي حظر السيرفرات الفوري 428 و Connection Closed
-        browser: ['Mac OS', 'Chrome', '121.0.0.0'], 
-        syncFullHistory: false,
-        markOnlineOnConnect: true
+        browser: Browsers.macOS('Chrome') // 🖥️ محاكاة متصفح لطلب الكود الرقمي
     });
 
-    // طلب كود الربط الرقمي من السيرفر لأول مرة
-    if (!sock.authState.creds.registered) {
-        console.clear();
-        console.log(`\n[ Kakachi-bot ] Connecting to WhatsApp for: ${phoneNumber}...`);
-        console.log(`⏳ Please wait 6 seconds to fetch your secure code...`);
-        
-        // تأخير أمني بمقدار 6 ثوانٍ لضمان استقرار قنوات الاتصال قبل طلب الكود
-        setTimeout(async () => {
-            try {
-                let code = await sock.requestPairingCode(phoneNumber);
-                code = code?.match(/.{1,4}/g)?.join('-') || code; // تنسيق الكود ليظهر بشكل (XXXX-XXXX)
-                console.log(`\n========================================`);
-                console.log(`🔑 YOUR PAIRING CODE IS: \x1b[32m${code}\x1b[0m`);
-                console.log(`========================================\n`);
-                console.log(`👉 Open WhatsApp > Linked Devices > Link with phone number and enter this code.`);
-            } catch (error) {
-                console.error("❌ Failed to generate code. Delete auth_info and try again:", error.message);
-            }
-        }, 6000);
-    }
-
-    // حفظ بيانات تسجيل الدخول تلقائياً فور الربط
     sock.ev.on('creds.update', saveCreds);
 
-    // 📩 محرك الأوامر والردود التلقائية للبوت المربوط بملفك الأساسي
-    sock.ev.on('messages.upsert', async (m) => {
-        try {
-            const msg = m.messages;
-            if (!msg || !msg.message || msg.key.fromMe) return; 
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, qr } = update;
 
-            const from = msg.key.remoteJid;
-            const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+        // إذا كان البوت غير مرتبط برقم هاتف بعد
+        if (!sock.authState.creds.registered) {
+            const botNumber = "212784776925"; // رقم المطور المراد ربطه
 
-            console.log(`📩 Message from [${from}]: ${text}`);
-
-            // استدعاء ملف الأوامر المجمع الخارجي الخاص بمستودعك commands.js
-            try {
-                const { handleCommand } = require('./commands');
-                await handleCommand(sock, msg, from, text);
-            } catch {
-                // ردود افتراضية سريعة في حال عدم توفر ملف الأوامر المجمع بشكل صحيح
-                if (text === 'السلام عليكم') {
-                    await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك في بوت كاكاشي 🤖✨' });
-                } 
-                else if (text === 'الاوامر' || text === 'أوامر') {
-                    await sock.sendMessage(from, { text: '📜 قائمة الأوامر المتاحة:\n1. السلام عليكم\n2. المطور' });
-                } 
-                else if (text === 'المطور') {
-                    await sock.sendMessage(from, { text: '👤 مطور هذا البوت هو صاحب الرقم الموثق: +212784776925' });
-                }
+            if (connection === 'connecting' || qr) {
+                setTimeout(async () => {
+                    try {
+                        // 🔑 استدعاء ميزة الكود الرقمي من مكتبة واتساب
+                        const code = await sock.requestPairingCode(botNumber);
+                        
+                        console.log(`\n========================================`);
+                        console.log(`🔮 كود الربط الرقمي لبوت كاكاشي هو:`);
+                        console.log(`👉  \x1b[32m\x1b[1m${code}\x1b[0m  👈`); // سيظهر الكود بلون أخضر عريض
+                        console.log(`========================================`);
+                        console.log(`ادخل إلى واتساب -> الأجهزة المرتبطة -> ربط برقم الهاتف، واكتب الكود.\n`);
+                    } catch (err) {
+                        console.error("❌ خطأ أثناء طلب الكود الرقمي:", err);
+                    }
+                }, 3000); // مهلة 3 ثوانٍ لضمان استقرار الاتصال قبل الطلب
             }
-        } catch (err) {
-            console.error("❌ Error in message handler:", err);
+        }
+
+        if (connection === 'open') {
+            console.log('[✅] تم ربط البوت بنجاح وهو يعمل الآن عبر الكود الرقمي!');
         }
     });
 
-    // 🔄 مراقبة حالة الاتصال وإعادة التشغيل تلقائياً عند الطوارئ
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        
-        if (connection === 'close') {
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                console.log('🔄 Connection closed by server. Retrying in 5 seconds...');
-                setTimeout(() => startBot(), 5000); 
-            } else {
-                console.log('❌ Logged out! Please delete auth_info folder and pair again.');
+    // استيراد ومعالجة الأوامر من ملف الأوامر الخاص بك
+    sock.ev.on('messages.upsert', async chatUpdate => {
+        try {
+            const msg = chatUpdate.messages[0];
+            if (!msg.message || msg.key.fromMe) return;
+
+            // هنا يتم استدعاء معالج الأوامر لديك (مثال لتشغيل الملفات الأخرى)
+            if (global.commands) {
+                // دالة تشغيل الأوامر الخاصة ببوت كاكاشي
             }
-        } else if (connection === 'open') {
-            console.log('\n✅ [ Kakachi-bot ] Connected successfully and active now!');
+        } catch (error) {
+            console.log(error);
         }
     });
 }
 
-// تشغيل البوت
-startBot();
+connectToWhatsApp();
