@@ -1,29 +1,48 @@
-async function handleReplies(sock, from, msg, body) {
-    try {
-        const cleanText = body.trim();
+const fs = require('fs');
+const path = require('path');
 
-        // نظام فحص التقاط إجابات ألعاب التخمين والفعاليات
-        if (global.guessGame && global.guessGame[from]) {
-            if (cleanText === global.guessGame[from].answer) {
-                clearTimeout(global.guessGame[from].timeout);
-                delete global.guessGame[from];
-                return sock.sendMessage(from, { text: `🎉 *إجابة صحيحة مذهلة وسريعة!* \n\nلقد حزرت اسم الدولة الصحيح بنجاح! 🏆✨` }, { quoted: msg });
+// تحديد مسار مجلد الأوامر الظاهر في صورتك
+const commandsFolder = path.join(__dirname, 'الأوامر');
+
+async function handleMessage(sock, msg) {
+    try {
+        const from = msg.key.remoteJid;
+        const body = msg.message.conversation || 
+                     (msg.message.extendedTextMessage && msg.message.extendedTextMessage.text) || '';
+                     
+        if (!body.startsWith('.')) return; // يجب أن يبدأ الأمر بنقطة
+        
+        // تفكيك النص: استخراج اسم الأمر والمرفقات
+        const args = body.trim().split(/ +/);
+        const commandName = args.shift().toLowerCase().replace('.', ''); // اسم الأمر بدون النقطة
+
+        // قراءة الملفات داخل مجلد "الأوامر" والدخول إليها
+        if (fs.existsSync(commandsFolder)) {
+            const files = fs.readdirSync(commandsFolder).filter(file => file.endsWith('.js'));
+            
+            let commandFound = false;
+
+            for (const file of files) {
+                const commandFile = require(path.join(commandsFolder, file));
+                
+                // التأكد من أن الأمر يطابق اسم الملف أو الاختصارات المحددة بداخل ملف الأمر
+                if (commandFile.name === commandName || (commandFile.aliases && commandFile.aliases.includes(commandName))) {
+                    await commandFile.execute(sock, msg, args);
+                    commandFound = true;
+                    break;
+                }
+            }
+
+            if (!commandFound && commandName === 'اوامر') {
+                // إذا كتب ".اوامر" يقرأ أسماء الملفات تلقائياً ويعرضها كقائمة
+                const list = files.map(f => `• .${f.replace('.js', '')}`).join('\n');
+                await sock.sendMessage(from, { text: `⚡ *قائمة أوامر بوت كاكاشي المستخرجة:* ⚡\n\n${list}` }, { quoted: msg });
             }
         }
 
-        // الردود التلقائية للمطور ورابط الشات المباشر له
-        if (body.includes('مطور') || body.includes('المطور') || body.includes('المالك')) {
-            let devReply = `👑 *﹝ قِـسْـمِ إِدَارَة كَـاكَـاشِـي بُـوت ﹞*\n\n👋 للتواصل المباشر مع مطور ومالك الروبوت اضغط على الرابط:\n🔗 https://wa.me`;
-            return sock.sendMessage(from, { text: devReply }, { quoted: msg });
-        }
-
-        if (cleanText === 'هلا' || cleanText === 'السلام عليكم') {
-            return sock.sendMessage(from, { text: `وعليكم السلام ورحمة الله وبركاته! اكتب \`.اوامر\` لتكتشف ميزاتي الأسطورية ⚡🥷` }, { quoted: msg });
-        }
-
     } catch (err) {
-        console.error("خطأ معالج الردود التلقائية:", err);
+        console.error('خطأ أثناء الدخول للمجلد وتشغيل الأمر:', err);
     }
 }
 
-module.exports = { handleReplies };
+module.exports = { handleMessage };
