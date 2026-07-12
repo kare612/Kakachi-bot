@@ -1,87 +1,42 @@
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason,
-    Browsers,
-    getContentType
-} = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const fs = require('fs');
 
-async function startKakashiBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('./session_kakashi');
-
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, 
+        printQRInTerminal: false, // إيقاف الـ QR كود
         auth: state,
-        browser: Browsers.macOS('Chrome') 
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
+
+    // طلب كود الربط الرقمي للرقم المعتمد
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = "212784776925";
+        await delay(3000); 
+        try {
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log('\n=========================================');
+            console.log(`🔥 كود الربط الخاص بك هو: ${code}`);
+            console.log('=========================================\n');
+        } catch (error) {
+            console.error('حدث خطأ أثناء طلب كود الربط:', error);
+        }
+    }
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
-        if (!sock.authState.creds.registered) {
-            const botNumber = "212784776925"; 
-
-            if (connection === 'connecting' || qr) {
-                setTimeout(async () => {
-                    try {
-                        console.log(`\n[⏳] Requesting Pairing Code for: +${botNumber}...`);
-                        const pairingCode = await sock.requestPairingCode(botNumber);
-                        
-                        console.log(`\n========================================`);
-                        console.log(`🔮 YOUR KAKASHI BOT PAIRING CODE IS:`);
-                        console.log(`👉  \x1b[32m\x1b[1m${pairingCode}\x1b[0m  👈`); 
-                        console.log(`========================================`);
-                        console.log(`Go to WhatsApp -> Linked Devices -> Link with phone number and enter this code.\n`);
-                    } catch (error) {
-                        console.error("[❌] Failed to get pairing code:", error.message);
-                    }
-                }, 7000); 
-            }
-        }
-
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('[⚠️] Connection closed. Reconnecting...');
-            if (shouldReconnect) startKakashiBot();
+            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== 401;
+            console.log('تم إغلاق الاتصال، جاري إعادة الاتصال...', shouldReconnect);
+            if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('\n========================================');
-            console.log('[✅] Kakashi-Bot is Connected Successfully!');
-            console.log('========================================\n');
-        }
-    });
-
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const mek = chatUpdate.messages;
-            if (!mek.message || mek.key.fromMe) return;
-
-            const from = mek.key.remoteJid;
-            const type = getContentType(mek.message);
-            const body = (type === 'conversation') ? mek.message.conversation : 
-                         (type === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : '';
-
-            const prefix = '.'; 
-            if (!body.startsWith(prefix)) return;
-
-            const args = body.trim().split(/ +/).slice(1);
-            const commandName = body.slice(prefix.length).trim().split(/ +/).shift().toLowerCase();
-
-            if (fs.existsSync('./commands.js')) {
-                const commands = require('./commands.js');
-                if (commands[commandName]) {
-                    await commands[commandName](sock, mek, from, args);
-                }
-            }
-        } catch (err) {
-            console.error("Error processing message:", err);
+            console.log('🎉 تم اتصال البوت بنجاح ومستعد لتلقي الأوامر!');
         }
     });
 }
 
-startKakashiBot();
-        
+startBot();
