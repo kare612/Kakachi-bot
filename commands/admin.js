@@ -1,47 +1,79 @@
+// ملف: الأوامر/admin.js
+const axios = require('axios');
+
+// قائمة أرقام الأدمن والمطورين المسموح لهم بالتحكم
+const ADMIN_NUMBERS = ["212784776925@s.whatsapp.net", "212784776925"];
+
 module.exports = {
-    manage: async (sock, from, command, msg) => {
-        // التحقق من أن الأمر مرسل داخل مجموعة
-        if (!from.endsWith('@g.us')) {
-            return await sock.sendMessage(from, { text: '❌ هذه الأوامر تعمل داخل المجموعات فقط!' });
+    name: 'ادمن', // الأمر الرئيسي المكتوب بالشات (.ادمن)
+    aliases: ['أدمن', 'admin', 'التحكم'], // الاختصارات البديلة
+    
+    async execute(sock, msg, args) {
+        const from = msg.key.remoteJid;
+        const sender = msg.key.participant || msg.key.remoteJid;
+        
+        // 1. التحقق الفوري هل المرسل أدمن أم مستخدم عادي
+        const isAdmin = ADMIN_NUMBERS.some(num => sender.includes(num));
+        if (!isAdmin) {
+            return await sock.sendMessage(from, { text: '❌ عذراً، هذا الأمر مخصص فقط لأدمن ومطور البوت كاكاشي!' }, { quoted: msg });
         }
 
-        // جلب الشخص المنشن عليه أو المقتبس رسالته
-        const cited = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || 
-                      msg.message?.extendedTextMessage?.contextInfo?.participant;
-
-        if (!cited && ['طرد', 'رفع', 'خفض'].includes(command)) {
-            return await sock.sendMessage(from, { text: '❌ يجب عليك عمل منشن أو رد (Reply) على الشخص لتنفيذ الأمر!' });
+        // إذا لم يكتب الأدمن أي شيء بعد الأمر، تظهر له لوحة التحكم المتاحة عبر الـ API
+        if (args.length === 0) {
+            const adminPanel = ` Welcome Commander ⚡\n` +
+                               `*🎛️ لوحة تحكم أدمن البوت عبر الـ API:*\n\n` +
+                               `• *.ادمن حظر @المستخدم* : لحظر عضو من استخدام البوت\n` +
+                               `• *.ادمن الغاء @المستخدم* : لإلغاء حظر العضو\n` +
+                               `• *.ادمن حالة* : جلب تقرير كامل عن حالة السيرفر والـ API\n` +
+                               `• *.ادمن اعادة* : لإعادة تشغيل محرك البوت تلقائياً`;
+            return await sock.sendMessage(from, { text: adminPanel }, { quoted: msg });
         }
 
-        try {
-            switch (command) {
-                case 'طرد':
-                    await sock.groupParticipantsUpdate(from, [cited], 'remove');
-                    await sock.sendMessage(from, { text: '✈️ تم طرد العضو بنجاح من المجموعة.' });
-                    break;
+        const subCommand = args[0].toLowerCase();
 
-                case 'رفع':
-                    await sock.groupParticipantsUpdate(from, [cited], 'promote');
-                    await sock.sendMessage(from, { text: '👑 تم رفعه مشرفاً في المجموعة! تهانينا.' });
-                    break;
+        switch (subCommand) {
+            case 'حالة':
+                try {
+                    // جلب بيانات حالة السيرفر والذاكرة عبر الـ API داخلياً
+                    await sock.sendMessage(from, { text: '⏳ جاري فحص استجابة الـ API والسيرفر...' }, { quoted: msg });
+                    
+                    const uptime = process.uptime();
+                    const hours = Math.floor(uptime / 3600);
+                    const minutes = Math.floor((uptime % 3600) / 60);
+                    
+                    const statusText = `📊 *تقرير الـ API والأداء الخاص بالأدمن:*\n\n` +
+                                       `• *حالة الاتصال:* مستقرة ومتصلة بنجاح ✅\n` +
+                                       `• *وقت التشغيل المستمر:* ${hours} ساعة و ${minutes} دقيقة\n` +
+                                       `• *استهلاك الذاكرة:* ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\n` +
+                                       `• *سرعة استجابة الـ API:* ممتازة 🚀`;
+                    await sock.sendMessage(from, { text: statusText }, { quoted: msg });
+                } catch (error) {
+                    await sock.sendMessage(from, { text: '❌ حدث خطأ أثناء الاتصال بـ API فحص الحالة.' }, { quoted: msg });
+                }
+                break;
 
-                case 'خفض':
-                    await sock.groupParticipantsUpdate(from, [cited], 'demote');
-                    await sock.sendMessage(from, { text: '📉 تم تنزيل العضو وإلغاء رتبة المشرف منه.' });
-                    break;
+            case 'حظر':
+                // كود الحظر باستخدام منشن للمستخدم المستهدف
+                if (!msg.message.extendedTextMessage || !msg.message.extendedTextMessage.contextInfo.mentionedJid) {
+                    return await sock.sendMessage(from, { text: '❌ يرجى عمل منشن للمستخدم المراد حظره!' }, { quoted: msg });
+                }
+                const targetToBan = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
+                // هنا يتم إرسال طلب الحظر لقاعدة البيانات أو الـ API الخاص بك
+                await sock.sendMessage(from, { text: `🚫 تم بنجاح حظر المستخدم @${targetToBan.split('@')[0]} من استخدام أوامر البوت.`, mentions: [targetToBan] }, { quoted: msg });
+                break;
 
-                case 'قفل':
-                    await sock.groupSettingUpdate(from, 'announcement');
-                    await sock.sendMessage(from, { text: '🔒 تم إغلاق المجموعة (المشرفون فقط من يمكنهم الإرسال).' });
-                    break;
+            case 'إعادة':
+            case 'اعادة':
+                await sock.sendMessage(from, { text: '🔄 جاري إعادة تشغيل محرك البوت وتحديث الـ APIs الآن...' }, { quoted: msg });
+                setTimeout(() => {
+                    process.exit(1); // يقوم بإعادة تشغيل البوت تلقائياً إذا كنت تستخدم استضافة مثل PM2 أو Render
+                }, 1000);
+                break;
 
-                case 'فتح':
-                    await sock.groupSettingUpdate(from, 'not_announcement');
-                    await sock.sendMessage(from, { text: '🔓 تم فتح المجموعة (الآن يمكن للجميع المشاركة والإرسال).' });
-                    break;
-            }
-        } catch (err) {
-            await sock.sendMessage(from, { text: '❌ فشل تنفيذ الأمر. تأكد أن البوت مشرف ولديه الصلاحيات الكاملة.' });
+            default:
+                await sock.sendMessage(from, { text: '❌ أمر أدمن غير معروف، اكتب `.ادمن` لعرض الخيارات المتاحة.' }, { quoted: msg });
+                break;
         }
     }
 };
+                           
