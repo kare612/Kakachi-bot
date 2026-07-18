@@ -1,41 +1,47 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const { Boom } = require('@hapi/boom');
-const replies = require('./replies.js'); // التأكد من استدعاء ملف الردود
+const fs = require('fs');
 
-async function startKakashiBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('Kakashi_Session');
-    
+async function startBot() {
+    // 1. إنشاء مسار حفظ جلسة تسجيل الدخول
+    const { state, saveCreds } = await useMultiFileAuthState('session_info');
+
+    // 2. إعداد اتصال السوكيت بالواتساب وإلغاء الـ QR
     const sock = makeWASocket({
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: true,
-        auth: state
+        auth: state,
+        printQRInTerminal: false, // تم الإيقاف لعدم تداخل كود الـ QR
+        logger: pino({ level: 'silent' })
     });
 
+    // 3. طلب كود الربط الرقمي للرقم المخصص
+    if (!sock.authState.creds.registered) {
+        const phoneNumber = "212784776925"; // رقم هاتفك المعتمد بدون (+)
+        
+        await delay(3000); // مهلة قصيرة لضمان استقرار الاتصال قبل الطلب
+        try {
+            const code = await sock.requestPairingCode(phoneNumber);
+            console.log("\n=================================");
+            console.log(`🔑 كود الربط الخاص بك هو: ${code}`);
+            console.log("=================================\n");
+        } catch (error) {
+            console.error("❌ حدث خطأ أثناء طلب كود الربط:", error);
+        }
+    }
+
+    // 4. حفظ بيانات الجلسة عند التحديث
     sock.ev.on('creds.update', saveCreds);
 
+    // 5. مراقبة حالة الاتصال بالخادم
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            if (shouldReconnect) startKakashiBot();
-        } else if (connection === 'open') {
-            console.log('✅ تم تشغيل بوت كاكاشي والأوامر جاهزة للاستخدام الآن!');
-        }
-    });
-
-    // الـ Listener المسؤول عن التقاط الرسائل وتشغيل الأوامر
-    sock.ev.on('messages.upsert', async chatUpdate => {
-        try {
-            const msg = chatUpdate.messages[0];
-            if (!msg.message || msg.key.fromMe) return; // تجاهل رسائل البوت نفسه
-
-            // تشغيل دالة معالجة الردود المربوطة بالأوامر
-            await replies.handleMessage(sock, msg);
-        } catch (err) {
-            console.error('خطأ أثناء تشغيل الأمر:', err);
+        const { connection } = update;
+        if (connection === 'open') {
+            console.log('✅ تم تشغيل البوت بنجاح واتصاله بالواتساب!');
+        } else if (connection === 'close') {
+            console.log('🔄 تم إغلاق الاتصال، يتم إعادة التشغيل الآن...');
+            startBot();
         }
     });
 }
 
-startKakashiBot();
+// تشغيل البوت
+startBot();
