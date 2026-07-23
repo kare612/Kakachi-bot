@@ -1,146 +1,159 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const fs = require('fs');
-const path = require('path');
+import makeWASocket, { 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    delay, 
+    fetchLatestBaileysVersion 
+} from '@whiskeysockets/baileys';
+import pino from 'pino';
+import { Boom } from '@hapi/boom';
+import fs from 'fs';
 
-// إعدادات رقم مطور ومستلم البوت
-const OWNER_NUMBER = "212784776925@s.whatsapp.net";
-const phoneNumberToPair = "212784776925"; 
+// إعدادات البوت الأساسية
+const DEVELOPER_NUMBER = "212784776925"; // رقم المطور الخاص بك
+const BOT_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄-𝘽𝙊𝙏";
+const OWNER_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄";
+const PREFIX = ".";
 
-const commands = new Map();
-const commandsFolder = path.join(__dirname, 'commands');
-
-if (fs.existsSync(commandsFolder)) {
-    const commandFiles = fs.readdirSync(commandsFolder).filter(file => file.endsWith('.js'));
-    for (const file of commandFiles) {
-        const command = require(path.join(commandsFolder, file));
-        if (command.name) {
-            commands.set(command.name, command);
-            if (command.aliases && Array.isArray(command.aliases)) {
-                command.aliases.forEach(alias => commands.set(alias, command));
-            }
-        }
+async function startBot() {
+    // إنشاء مجلد حفظ الجلسة إذا لم يكن موجوداً
+    if (!fs.existsSync('./session')) {
+        fs.mkdirSync('./session');
     }
-    console.log(`[ كاكاشي ] تم تحميل ${commandFiles.length} أمر من المجلد الخارجي.`);
-}
 
-async function startKakashiBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('kakashi_session');
+    const { state, saveCreds } = await useMultiFileAuthState('./session');
+    const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({
+    const sock = makeWASocket.default({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false, // تعطيل الـ QR Code تماماً
         auth: state,
-        printQRInTerminal: false, 
-        logger: require('pino')({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"] 
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
+    // تفعيل خاصية كود الربط عبر رقم الهاتف (Pairing Code) في حال عدم تسجيل الدخول مسبقاً
     if (!sock.authState.creds.registered) {
-        await delay(3000); 
+        console.log(`\n=========================================`);
+        console.log(`[ ℹ️ ] جاري طلب كود الربط للرقم: ${DEVELOPER_NUMBER}`);
+        console.log(`=========================================\n`);
+        
+        await delay(5000); // انتظار لضمان استقرار الاتصال قبل الطلب
         try {
-            console.log(`\n==================================================`);
-            console.log(`📲 جاري طلب كود الربط للرقم: [ ${phoneNumberToPair} ] ...`);
-            
-            let code = await sock.requestPairingCode(phoneNumberToPair);
-            code = code?.match(/.{1,4}/g)?.join('-') || code;
-            
-            console.log(`\n🔥 كود ربط بوت كاكاشي الخاص بك هو: 👉  [ \x1b[32m${code}\x1b[0m ]  👈`);
-            console.log(`==================================================\n`);
+            let code = await sock.requestPairingCode(DEVELOPER_NUMBER);
+            code = code?.match(/.{1,4}/g)?.join("-") || code;
+            console.log(`\n┌────────────────────────────────────────┐`);
+            console.log(`│ 🔑 كود الربط الخاص بك هو: ${code} │`);
+            console.log(`└────────────────────────────────────────┘\n`);
+            console.log(`[ ⚠️ ] أدخل هذا الكود في هاتفك (الأجهزة المرتبطة -> ربط هاتف برقم)\n`);
         } catch (error) {
-            console.error("❌ فشل في جلب كود الربط:", error);
+            console.error("❌ فشل في طلب كود الربط:", error);
         }
     }
 
-    sock.ev.on('creds.update', saveCreds);
-
+    // إدارة أحداث الاتصال
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startKakashiBot();
+            const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('⚠️ تم إغلاق الاتصال بسبب: ', lastDisconnect.error, ', جاري إعادة الاتصال: ', shouldReconnect);
+            if (shouldReconnect) {
+                startBot();
+            }
         } else if (connection === 'open') {
-            console.log('🚀 محرك بوت كاكاشي متصل عبر رقم الهاتف ويعمل الآن بنجاح 100%!');
+            console.log(`\n✨ =========================================`);
+            console.log(`✅ تم اتصال [ ${BOT_NAME} ] بنجاح وهو جاهز للعمل!`);
+            console.log(`========================================= ✨\n`);
         }
     });
 
-    sock.ev.on('messages.upsert', async m => {
-        const msg = m.messages;
-        if (!msg || !msg.message || msg.key.fromMe) return;
+    sock.ev.on('creds.update', saveCreds);
 
-        const from = msg.key.remoteJid;
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        const cleanText = text.trim().toLowerCase();
+    // إدارة واستقبال الرسائل والأنظمة المزخرفة
+    sock.ev.on('messages.upsert', async (chatUpdate) => {
+        try {
+            const mek = chatUpdate.messages[0];
+            if (!mek.message) return;
+            if (mek.key.fromMe) return;
 
-        const sender = msg.key.participant || msg.key.remoteJid;
-        const isOwner = sender.includes("212784776925");
+            const from = mek.key.remoteJid;
+            const type = Object.keys(mek.message)[0];
+            const content = JSON.stringify(mek.message);
+            
+            // استخراج النص من الرسالة
+            let body = "";
+            if (type === 'conversation') body = mek.message.conversation;
+            else if (type === 'extendedTextMessage') body = mek.message.extendedTextMessage.text;
+            else if (type === 'imageMessage') body = mek.message.imageMessage.caption;
+            else if (type === 'videoMessage') body = mek.message.videoMessage.caption;
 
-        if (cleanText === 'السلام عليكم' || cleanText === 'سلام عليكم') {
-            return await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته يا نينجا 🥷🏻 نورت!' }, { quoted: msg });
-        }
-        if (cleanText === 'كاكاشي') {
-            return await sock.sendMessage(from, { text: 'نعم! أنا بوت كاكاشي في الخدمة ⚡ اكتب (.الاوامر) لترى قائمتي الفنية.' }, { quoted: msg });
-        }
-        if (cleanText === 'المطور' || cleanText === 'رقم المطور') {
-            return await sock.sendMessage(from, { text: `👑 مطوري ومبرمجي هو القائد كاكاشي، وهذا هو رقمه المباشر:\nwa.me/212784776925` }, { quoted: msg });
-        }
+            if (!body.startsWith(PREFIX)) return;
 
-        const prefix = '.';
-        if (!text.startsWith(prefix)) return;
+            const args = body.trim().split(/ +/).slice(1);
+            const command = body.slice(PREFIX.length).trim().split(/ +/).shift().toLowerCase();
+            const sender = mek.key.participant || mek.key.remoteJid;
+            const isOwner = sender.includes(DEVELOPER_NUMBER);
 
-        const args = text.slice(prefix.length).trim().split(/ +/);
-        const commandName = args.shift().toLowerCase();
+            // تزيين وزخرفة الردود العامة
+            const reply = async (text) => {
+                await sock.sendMessage(from, { text: `╭━━〔 ${BOT_NAME} 〕━━╮\n\n${text}\n\n╰━━━━━━━━━━━━━━╯` }, { quoted: mek });
+            };
 
-        if (commandName === 'الاوامر' || commandName === 'أوامر' || commandName === 'help' || commandName === 'menu') {
-            const menuText = `
-✨ ━━━━━━ 🜲 *𝐊𝐀𝐊𝐀𝐒𝐇𝐈 𝐁𝐎𝐓* 🜲 ━━━━━━ ✨
+            // قسـم الأوامـر المزخرفـة
+            switch (command) {
+                case 'الاوامر':
+                case 'menu':
+                case 'help':
+                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
 
-🥷🏻 *مرحباً بك في قائمة أوامر بوت كاكاشي الشاملة!*
-👤 *المطور:* @${OWNER_NUMBER.split('@')}
-⚡ *البادئة الحالية:* [  *.*  ]
+👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
+🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
 
-👑 ━━━ ❪ *🥷🏻 قـسـم الـمـطـور* ❫ ━━━ 👑
-» \`.فحص\` ➪ لمعرفة سرعة استجابة المحرك.
-» \`المطور\` ➪ جلب رابط المحادثة المباشر لصاحب البوت.
+🤖 *أوامر البوت العامة:*
+┌──────────────┐
+│ ⚡ ${PREFIX}بينج - فحص السرعة
+│ 📊 ${PREFIX}المعلومات - معلومات البوت
+└──────────────┘
 
-🎨 ━━━ ❪ *✍️ قـسـم الـزخـرفـة* ❫ ━━━ 🎨
-» \`.زخرف\` [النص] ➪ زخرفة النصوص الإنجليزية والأرقام بـ 16 نمطاً مذهلاً دفعة واحدة.
-» _مثال:_ \`.زخرف Kakashi\`
+👑 *أوامر المطور الخاصة:*
+┌──────────────┐
+│ 📢 ${PREFIX}نشر - إرسال رسالة للكل
+│ 🔌 ${PREFIX}خروج - مغادرة المجموعة
+└──────────────┘
 
-🎙️ ━━━ ❪ *🗣️ قـسـم الـنـطـق والـصـوت* ❫ ━━━ 🎙️
-» \`.قول\` [الكلام] ➪ تحويل النص المكتوب إلى رسالة صوتية مسموعة داخل الشات.
-» _مثال:_ \`.قول أهلاً بكم في عالم النينجا\`
+💡 _تم التطوير بواسطة: ${OWNER_NAME}_`;
+                    await reply(menuText);
+                    break;
 
-🤖 ━━━ ❪ *⚙️ الـردود الـتـلـقـائـيـة* ❫ ━━━ 🤖
-• البوت يتفاعل تلقائياً عند كتابة العبارات التالية (بدون نقطة):
-➪ \`السلام عليكم\`
-➪ \`كاكاشي\`
-➪ \`المطور\`
+                case 'بينج':
+                case 'ping':
+                    await reply(`🚀 *جـااااري الفـحـص...*\n⏱️ البوت يعمل بأعلى كفاءة وسرعة استجابة هائلة!`);
+                    break;
 
-✨ ━━━━━━━━━━━━━━━━━━━━━━━ ✨`;
-            return await sock.sendMessage(from, { text: menuText, mentions: [OWNER_NUMBER] }, { quoted: msg });
-        }
+                case 'المعلومات':
+                case 'info':
+                    await reply(`📝 *مواصفات النظام الخاص بك:*\n\n⚙️ *الاسم:* ${BOT_NAME}\n👑 *المطور:* ${OWNER_NAME}\n🌐 *الرقم:* +${DEVELOPER_NUMBER}\n📌 *النظام:* Termux Node.js`);
+                    break;
 
-        if (commandName === 'فحص' || commandName === 'ping') {
-            const startTime = Date.now();
-            await sock.sendMessage(from, { text: '⚡ جاري فحص استجابة محرك كاكاشي...' }, { quoted: msg }).then(async () => {
-                const responseTime = Date.now() - startTime;
-                await sock.sendMessage(from, { text: `🚀 البوت شغال تمام!\n⏱️ سرعة الاستجابة: *${responseTime}ms*` }, { quoted: msg });
-            });
-            return;
-        }
+                // أوامر المطور فقط
+                case 'نشر':
+                case 'broadcast':
+                    if (!isOwner) return reply("❌ عذراً، هذا الأمر مخصص فقط لمطور البوت العظيم.");
+                    if (args.length < 1) return reply(`❌ يرجى كتابة نص الرسالة بعد الأمر، مثال:\n${PREFIX}نشر أهلاً بالجميع`);
+                    const bcText = args.join(" ");
+                    await reply(`📢 *جاري إرسال إعلان المطور لجميع المحادثات...*\n\nالنص: ${bcText}`);
+                    // هنا يمكن إضافة حلقة تكرار لإرسالها لجميع المجموعات لاحقاً
+                    break;
 
-        const command = commands.get(commandName);
-        if (command) {
-            if (command.ownerOnly && !isOwner) {
-                return await sock.sendMessage(from, { text: '❌ عذراً، هذا الأمر مخصص فقط لمطور البوت!' }, { quoted: msg });
+                default:
+                    // تجاهل الأوامر غير المعرفة أو إرسال تنبيه بسيط
+                    break;
             }
-            try {
-                await command.execute(sock, msg, args, { isOwner, OWNER_NUMBER });
-            } catch (error) {
-                console.error(error);
-            }
+
+        } catch (err) {
+            console.error("Error in messages.upsert: ", err);
         }
     });
 }
 
-startKakashiBot();
-                                     
+// تشغيل البوت
+startBot().catch(err => console.error("خطأ حرج في تشغيل البوت:", err));
