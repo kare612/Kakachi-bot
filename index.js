@@ -7,6 +7,7 @@ import makeWASocket, {
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
 
 const DEVELOPER_NUMBER = "212784776925"; 
 const BOT_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄-𝘽𝙊𝙏";
@@ -56,7 +57,7 @@ async function startBot() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(`\n✅ تم اتصال [ ${BOT_NAME} ] بنجاح!`);
+            console.log(`\n✅ تم اتصال [ ${BOT_NAME} ] بنجاح وهو جاهز لاستقبال الأوامر!`);
         }
     });
 
@@ -91,16 +92,17 @@ async function startBot() {
                 await sock.sendMessage(from, { text: `╭━━〔 ${BOT_NAME} 〕━━╮\n\n${text}\n\n╰━━━━━━━━━━━━━━╯` }, { quoted: mek });
             };
 
-            // قراءة وتشغيل الأوامر تلقائياً من مجلد "الأوامر"
-            const commandsFolder = './الأوامر';
+            // قراءة وتشغيل الأوامر تلقائياً من مجلد "الأوامر" (تم إصلاح المسار بالكامل هنا)
+            const commandsFolder = path.resolve('./الأوامر');
             if (fs.existsSync(commandsFolder)) {
                 const files = fs.readdirSync(commandsFolder).filter(file => file.endsWith('.js'));
                 
                 for (const file of files) {
-                    // استيراد ديناميكي للملفات
-                    const commandFile = await import(path.toNamespacedPath(`${commandsFolder}/${file}`));
+                    const filePath = path.join(commandsFolder, file);
+                    const fileUrl = pathToFileURL(filePath).href; // تحويل المسار إلى صيغة متوافقة مع import دلالي
                     
-                    // إذا كان الملف يحتوي على دالة لتشغيل الأمر، يتم تمرير المتغيرات لها
+                    const commandFile = await import(fileUrl);
+                    
                     if (commandFile.default && typeof commandFile.default === 'function') {
                         await commandFile.default({
                             command, args, isOwner, reply, DEVELOPER_NUMBER, 
@@ -111,10 +113,10 @@ async function startBot() {
             }
 
         } catch (err) {
-            console.error("Error: ", err);
+            console.error("Error in execution: ", err);
         }
     });
 }
 
 startBot().catch(err => console.error("خطأ حرج:", err));
-                    
+            
