@@ -6,15 +6,17 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
+import path from 'path';
 
-// إعدادات البوت الأساسية
-const DEVELOPER_NUMBER = "212784776925"; // رقم المطور الخاص بك
+const DEVELOPER_NUMBER = "212784776925"; 
 const BOT_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄-𝘽𝙊𝙏";
 const OWNER_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄";
 const PREFIX = ".";
 
+// نظام نقاط مخزن مؤقتاً
+const userPoints = {};
+
 async function startBot() {
-    // إنشاء مجلد حفظ الجلسة إذا لم يكن موجوداً
     if (!fs.existsSync('./session')) {
         fs.mkdirSync('./session');
     }
@@ -22,66 +24,52 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./session');
     const { version } = await fetchLatestBaileysVersion();
 
-    // تم إصلاح الاستدعاء هنا بإزالة .default
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // تعطيل الـ QR Code تماماً
+        printQRInTerminal: false, 
         auth: state,
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // تفعيل خاصية كود الربط عبر رقم الهاتف (Pairing Code) في حال عدم تسجيل الدخول مسبقاً
     if (!sock.authState.creds.registered) {
         console.log(`\n=========================================`);
         console.log(`[ ℹ️ ] جاري طلب كود الربط للرقم: ${DEVELOPER_NUMBER}`);
         console.log(`=========================================\n`);
-        
-        await delay(5000); // انتظار لضمان استقرار الاتصال قبل الطلب
+        await delay(5000); 
         try {
             let code = await sock.requestPairingCode(DEVELOPER_NUMBER);
             code = code?.match(/.{1,4}/g)?.join("-") || code;
             console.log(`\n┌────────────────────────────────────────┐`);
             console.log(`│ 🔑 كود الربط الخاص بك هو: ${code} │`);
             console.log(`└────────────────────────────────────────┘\n`);
-            console.log(`[ ⚠️ ] أدخل هذا الكود في هاتفك (الأجهزة المرتبطة -> ربط هاتف برقم)\n`);
         } catch (error) {
             console.error("❌ فشل في طلب كود الربط:", error);
         }
     }
 
-    // إدارة أحداث الاتصال
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const errorOutput = lastDisconnect && lastDisconnect.error && lastDisconnect.error.output;
             const statusCode = errorOutput ? errorOutput.statusCode : null;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
-            console.log('⚠️ تم إغلاق الاتصال، جاري إعادة الاتصال: ', shouldReconnect);
-            if (shouldReconnect) {
-                startBot();
-            }
+            if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(`\n✨ =========================================`);
-            console.log(`✅ تم اتصال [ ${BOT_NAME} ] بنجاح وهو جاهز للعمل!`);
-            console.log(`========================================= ✨\n`);
+            console.log(`\n✅ تم اتصال [ ${BOT_NAME} ] بنجاح!`);
         }
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // إدارة واستقبال الرسائل والأنظمة المزخرفة
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             const mek = chatUpdate.messages[0];
-            if (!mek || !mek.message) return;
-            if (mek.key.fromMe) return;
+            if (!mek || !mek.message || mek.key.fromMe) return;
 
             const from = mek.key.remoteJid;
             const type = Object.keys(mek.message)[0];
             
-            // استخراج النص من الرسالة
             let body = "";
             if (type === 'conversation') body = mek.message.conversation;
             else if (type === 'extendedTextMessage') body = mek.message.extendedTextMessage.text;
@@ -95,65 +83,38 @@ async function startBot() {
             const sender = mek.key.participant || mek.key.remoteJid;
             const isOwner = sender.includes(DEVELOPER_NUMBER);
 
-            // تزيين وزخرفة الردود العامة
+            // تفعيل نقاط التفاعل
+            if (!userPoints[sender]) userPoints[sender] = 0;
+            userPoints[sender] += 1;
+
             const reply = async (text) => {
                 await sock.sendMessage(from, { text: `╭━━〔 ${BOT_NAME} 〕━━╮\n\n${text}\n\n╰━━━━━━━━━━━━━━╯` }, { quoted: mek });
             };
 
-            // قسـم الأوامـر المزخرفـة
-            switch (command) {
-                case 'الاوامر':
-                case 'menu':
-                case 'help':
-                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
-
-👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
-🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
-
-🤖 *أوامر البوت العامة:*
-┌──────────────┐
-│ ⚡ ${PREFIX}بينج - فحص السرعة
-│ 📊 ${PREFIX}المعلومات - معلومات البوت
-└──────────────┘
-
-👑 *أوامر المطور الخاصة:*
-┌──────────────┐
-│ 📢 ${PREFIX}نشر - إرسال رسالة للكل
-│ 🔌 ${PREFIX}خروج - مغادرة المجموعة
-└──────────────┘
-
-💡 _تم التطوير بواسطة: ${OWNER_NAME}_`;
-                    await reply(menuText);
-                    break;
-
-                case 'بينج':
-                case 'ping':
-                    await reply(`🚀 *جـااااري الفـحـص...*\n⏱️ البوت يعمل بأعلى كفاءة وسرعة استجابة هائلة!`);
-                    break;
-
-                case 'المعلومات':
-                case 'info':
-                    await reply(`📝 *مواصفات النظام الخاص بك:*\n\n⚙️ *الاسم:* ${BOT_NAME}\n👑 *المطور:* ${OWNER_NAME}\n🌐 *الرقم:* +${DEVELOPER_NUMBER}\n📌 *النظام:* Termux Node.js`);
-                    break;
-
-                case 'نشر':
-                case 'broadcast':
-                    if (!isOwner) return reply("❌ عذراً، هذا الأمر مخصص فقط لمطور البوت العظيم.");
-                    if (args.length < 1) return reply(`❌ يرجى كتابة نص الرسالة بعد الأمر، مثال:\n${PREFIX}نشر أهلاً بالجميع`);
-                    const bcText = args.join(" ");
-                    await reply(`📢 *جاري إرسال إعلان المطور لجميع المحادثات...*\n\nالنص: ${bcText}`);
-                    break;
-
-                default:
-                    break;
+            // قراءة وتشغيل الأوامر تلقائياً من مجلد "الأوامر"
+            const commandsFolder = './الأوامر';
+            if (fs.existsSync(commandsFolder)) {
+                const files = fs.readdirSync(commandsFolder).filter(file => file.endsWith('.js'));
+                
+                for (const file of files) {
+                    // استيراد ديناميكي للملفات
+                    const commandFile = await import(path.toNamespacedPath(`${commandsFolder}/${file}`));
+                    
+                    // إذا كان الملف يحتوي على دالة لتشغيل الأمر، يتم تمرير المتغيرات لها
+                    if (commandFile.default && typeof commandFile.default === 'function') {
+                        await commandFile.default({
+                            command, args, isOwner, reply, DEVELOPER_NUMBER, 
+                            BOT_NAME, OWNER_NAME, PREFIX, sock, from, sender, mek, userPoints
+                        });
+                    }
+                }
             }
 
         } catch (err) {
-            console.error("Error in messages.upsert: ", err);
+            console.error("Error: ", err);
         }
     });
 }
 
-// تشغيل البوت
-startBot().catch(err => console.error("خطأ حرج في تشغيل البوت:", err));
-                        
+startBot().catch(err => console.error("خطأ حرج:", err));
+                    
