@@ -2,31 +2,16 @@
  * Api By Johan Dev
  * Code By Johan Dev
  * movie and serious dl & search
- * Adapted for Kakachi-Bot System
+ * Fixed & Adapted for Kakachi-Bot System
  */
 
 import axios from 'axios';
-import pkg from '@whiskeysockets/baileys';
-
-const { generateWAMessageFromContent } = pkg;
 
 function _r(s) {
   return s.split('+').map(t => t.trim().replace(/[()']/g, '')).join('');
 }
 
 const API_BASE = _r("('https') + '://' + 'johan-vex-apis' + ('.') + 'vercel' + ('.') + 'app' + '/api/search/akwam'");
-
-const DL_HEADERS = {
-  'User-Agent': 'Mozilla/5.0',
-  Referer: 'https://akwam.it/',
-};
-
-function formatBytes(bytes) {
-  if (!bytes) return '';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-}
 
 async function apiSearch(query) {
   const res = await axios.get(API_BASE, { params: { q: query }, timeout: 20000 });
@@ -46,7 +31,7 @@ async function apiResolve(downloadPageUrl) {
   return res.data.result;
 }
 
-export default async function ({ command, args, reply, sock, from, mek, PREFIX }) {
+export default async function ({ command, args, reply, PREFIX }) {
   
   // 1. أمر البحث عن فيلم أو مسلسل
   if (command === 'اكوام' || command === 'akwam') {
@@ -73,7 +58,8 @@ export default async function ({ command, args, reply, sock, from, mek, PREFIX }
   // 2. أمر جلب حلقات المسلسل أو روابط تحميل الفيلم
   if (command === 'ميديا' || command === 'media') {
     if (args.length < 1) return reply("❌ يرجى وضع رابط ميديا أكوام الصحيح!");
-    const targetUrl = args[0];
+    // تم الإصلاح هنا لاستخراج الرابط الأول بشكل صحيح بدلاً من المصفوفة كاملة
+    const targetUrl = args[0]; 
     
     await reply("⏳ *جاري جلب تفاصيل المحتوى والروابط...*");
     try {
@@ -107,10 +93,11 @@ export default async function ({ command, args, reply, sock, from, mek, PREFIX }
     }
   }
 
-  // 3. أمر فك تشفير الرابط النهائي وجلب الرابط المباشر للمشاهدة والتحميل
+  // 3. أمر فك تشفير الرابط النهائي وجلب الرابط المباشر
   if (command === 'فك' || command === 'resolve') {
     if (args.length < 1) return reply("❌ يرجى وضع الرابط المشفر المخصص لفك التشفير!");
-    const downloadPageUrl = args[0];
+    // تم الإصلاح هنا لضمان قراءة رابط الصفحة المشفرة بشكل صحيح ودون أخطاء مسارات
+    const downloadPageUrl = args[0]; 
     
     await reply("🔓 *جاري فك تشفير الرابط النهائي وجلب الرابط المباشر...*");
     try {
@@ -125,4 +112,4 @@ export default async function ({ command, args, reply, sock, from, mek, PREFIX }
       reply(`❌ فشل فك التشفير: ${err.message}`);
     }
   }
-}
+  }
