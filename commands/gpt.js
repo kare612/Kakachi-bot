@@ -1,54 +1,56 @@
-// إعدادات البوت الأساسية ورقم هاتف المالك
-const OWNER_NUMBER = "212784776925@s.whatsapp.net"; 
+import axios from 'axios';
 
-// دالة لجلب الزخرفة من الـ API (تستخدم موقع زغرفة مجاني ومفتوح)
-const axios = require('axios');
-
-async function getZakhrafa(text) {
-    try {
-        // يتم استخدام API لتوليد النصوص المزخرفة تلقائياً
-        const response = await axios.get(`https://vhtear.com{encodeURIComponent(text)}`);
-        return response.data.result || text;
-    } catch (error) {
-        // إذا فشل الـ API يتم استخدام زخرفة يدوية بسيطة كبديل لإصلاح الأخطاء
-        return `✨ 『 ${text} 』 ✨`;
-    }
-}
-
-async function handleCommand(sock, msg, command, args) {
-    const from = msg.key.remoteJid;
-    const sender = msg.key.participant || msg.key.remoteJid;
-    const isOwner = sender.includes("212784776925");
-
+export default async function ({ command, args, reply, BOT_NAME, sock, from, mek }) {
     switch (command) {
-        case 'اوامر':
-        case 'الاوامر':
-        case 'menu':
-            const menuText = `*⚡ قائمة أوامر بوت كاكاشي ⚡*\n\n` +
-                             `• *.زخرف [النص]* : لزخرفة النصوص عبر الـ API\n` +
-                             `• *.فيديو [اسم الأغنية]* : لتحميل فيديو من اليوتيوب\n` +
-                             `• *.صوت [اسم الأغنية]* : لتحميل صوت من اليوتيوب\n\n` +
-                             `• *.فحص* : للتأكد من أن البوت يعمل بنشاط`;
-            await sock.sendMessage(from, { text: menuText }, { quoted: msg });
+        case 'ذكاء':
+        case 'gpt':
+        case 'ai':
+            if (args.length < 1) return reply("❌ يرجى كتابة سؤالك بعد الأمر!\nمثال: .ذكاء من أنت؟");
+            await reply("🤖 *جاري التفكير وتوليد الرد...*");
+            try {
+                const res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(args.join(" "))}`);
+                if (res.data && res.data.result) {
+                    return reply(res.data.result);
+                } else {
+                    return reply("❌ عذراً، خادم الذكاء الاصطناعي لا يستجيب حالياً.");
+                }
+            } catch (err) {
+                return reply("❌ حدث خطأ أثناء الاتصال بالذكاء الاصطناعي.");
+            }
+
+        case 'فيديو':
+        case 'video':
+            if (args.length < 1) return reply("❌ يرجى وضع رابط الفيديو بعد الأمر!");
+            await reply("⏳ *جاري معالجة الرابط وتحميل الفيديو عبر الـ API...*");
+            try {
+                const res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(args[0])}`);
+                if (res.data && res.data.result && res.data.result.link) {
+                    await sock.sendMessage(from, { video: { url: res.data.result.link }, caption: `✨ تم التحميل بواسطة ${BOT_NAME}` }, { quoted: mek });
+                } else {
+                    reply("❌ فشل الـ API في جلب الفيديو، تأكد من صحة الرابط.");
+                }
+            } catch (err) {
+                reply("❌ حدث خطأ أثناء التحميل (API Error).");
+            }
             break;
 
-        case 'زخرف':
-        case 'زخرفة':
-            if (!args[0]) return await sock.sendMessage(from, { text: '❌ يرجى كتابة النص المراد زخرفته! مثال: .زخرف كاكاشي' }, { quoted: msg });
-            const textToDecorate = args.join(' ');
-            const decorated = await getZakhrafa(textToDecorate);
-            await sock.sendMessage(from, { text: decorated }, { quoted: msg });
-            break;
-
-        case 'فحص':
-            if (!isOwner) return await sock.sendMessage(from, { text: '❌ هذا الأمر خاص بمالك البوت فقط!' }, { quoted: msg });
-            await sock.sendMessage(from, { text: '✅ البوت يعمل بنجاح والاتصال مستقر يا زعيم!' }, { quoted: msg });
+        case 'صوت':
+        case 'mp3':
+            if (args.length < 1) return reply("❌ يرجى وضع رابط المقطع الصوتي!");
+            await reply("🎧 *جاري سحب الملف الصوتي وتحميله...*");
+            try {
+                const res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(args[0])}`);
+                if (res.data && res.data.result && res.data.result.link) {
+                    await sock.sendMessage(from, { audio: { url: res.data.result.link }, mimetype: 'audio/mp4' }, { quoted: mek });
+                } else {
+                    reply("❌ فشل تحميل الصوت من الرابط المرفق.");
+                }
+            } catch (err) {
+                reply("❌ خطأ في الـ API الخاص بالتحميل الصوتي.");
+            }
             break;
 
         default:
-            // أمر غير معروف
             break;
     }
 }
-
-module.exports = { handleCommand };
