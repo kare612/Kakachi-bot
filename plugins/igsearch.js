@@ -1,7 +1,6 @@
 /**
  * Api By Johan Dev
  * Code By Johan Dev
- * قناة المطور: https://whatsapp.com/channel/0029Vb7EzH0LY6dERNgelG3b
  * مواءمة وتعديل لبوت كاكاشي: Kakachi-bot
  */
 
@@ -290,3 +289,31 @@ let handler = async (m, { conn, text, usedPrefix, command }) => {
       return m.reply(`*⚠️ حجم الفيديو كبير جداً (${(buffer.length / (1024 * 1024)).toFixed(2)} MB). الحد الأقصى 25 ميجا.*`);
     }
 
+    const wa = generateWAMessageFromContent(m.chat, {
+      videoMessage: {
+        url: media.videoUrl,
+        mimetype: "video/mp4",
+        hasAudio: true,
+        seconds: 0,
+        fileLength: buffer.length,
+        pageCount: 0,
+        mediaKey: Buffer.alloc(32),
+        jpegThumbnail: null,
+        gifPlayback: false,
+        caption: `${H}\n*📌 الفيديو:* ${media.title}\n${F}`,
+      },
+    }, { quoted: m });
+
+    return await conn.relayMessage(m.chat, wa.message, { messageId: wa.key.id });
+  } catch (error) {
+    console.error(error);
+    return m.reply(`*❌ حدث خطأ: ${error.message}*`);
+  }
+};
+
+handler.help = ["igsearch"];
+handler.tags = ["media"];
+handler.command = /^(igsearch|انستا|reel)$/i;
+handler.owner = false;
+
+export default handler;
