@@ -23,7 +23,7 @@ const H = `*╮──────────────────⟢ـ*
 *╮──────────────────⟢ـ*`;
 
 const F = `*╯──────────────────⟢ـ*
-> *.¸¸ ❝˼𝐷𝐼𝐴𝐵𝐿𝑂᯽𝐵𝑂𝑇˼❝ ¸¸.*`;
+> *.¸¸ ❝˼𝐷𝐼𝐴𝐵𝐿𝑂᯽𝐵OCOT˼❝ ¸¸.*`;
 
 function decodeHtml(value = "") {
   return value
@@ -52,10 +52,10 @@ function unescapeUrl(value = "") {
 function canonicalInstagramUrl(rawUrl) {
   try {
     const url = new URL(rawUrl);
-    if (!["instagram.com", "www.instagram.com"].includes(url.hostname)) return null;
+    if (!["instagram.com", "://instagram.com"].includes(url.hostname)) return null;
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length < 2 || !["reel", "p", "tv"].includes(parts[0])) return null;
-    return `https://instagram.com{parts[0]}/${parts[1]}/`;
+    return `https://://instagram.com/${parts[0]}/${parts[1]}/`;
   } catch {
     return null;
   }
@@ -77,8 +77,8 @@ function extractSearchResults(html, limit) {
 
     found.push({
       permalink,
-      title: cleanText(titleMatch?.[1] || "") || "Instagram Reel",
-      description: cleanText(descriptionMatch?.[1] || ""),
+      title: cleanText(titleMatch ? titleMatch[1] : "") || "Instagram Reel",
+      description: cleanText(descriptionMatch ? descriptionMatch[1] : ""),
     });
   }
   return [...new Map(found.map((item) => [item.permalink, item])).values()].slice(0, limit);
@@ -101,7 +101,7 @@ function extractDuckDuckGoResults(html, limit) {
       found.push({
         permalink,
         title: cleanText(match[2]) || "Instagram Reel",
-        description: cleanText(snippet?.[1] || ""),
+        description: cleanText(snippet ? snippet[1] : ""),
       });
     } catch {}
   }
@@ -136,7 +136,7 @@ function readMeta(html, name) {
   ];
   for (const pattern of patterns) {
     const match = pattern.exec(html);
-    if (match?.[1]) return unescapeUrl(cleanText(match[1]));
+    if (match && match[1]) return unescapeUrl(cleanText(match[1]));
   }
   return null;
 }
@@ -144,7 +144,7 @@ function readMeta(html, name) {
 function firstMatch(html, patterns) {
   for (const pattern of patterns) {
     const match = pattern.exec(html);
-    if (match?.[1]) return unescapeUrl(match[1]);
+    if (match && match[1]) return unescapeUrl(match[1]);
   }
   return null;
 }
@@ -218,7 +218,7 @@ function extractDirectVideoUrl(html) {
     .map((item) => ({ ...item, url: unescapeUrl(item.url) }))
     .filter((item) => item.url.startsWith("http"));
 
-  if (versions?.length) {
+  if (versions && versions.length) {
     versions.sort((a, b) => {
       const qualityA = Number(a.width || 0) * Number(a.height || 0);
       const qualityB = Number(b.width || 0) * Number(b.height || 0);
@@ -246,7 +246,7 @@ async function scrapeInstagramPage(url) {
   }
   const mediaId = extractMediaId(html);
   if (!mediaId) throw new Error("Could not parse media details.");
-  return await scrapeInstagramPage(`https://instagram.com{mediaId}/embed/captioned/`);
+  return await scrapeInstagramPage(`https://://instagram.com/p/${mediaId}/embed/captioned/`);
 }
 
 async function startBot() {
@@ -286,5 +286,4 @@ async function startBot() {
 
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
-            // تصحيح جلب الرسالة الأولى من المصفوفة لحل مشكلة عدم الرد
-            if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
+                               
