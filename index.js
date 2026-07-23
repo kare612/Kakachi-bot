@@ -6,15 +6,15 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
-import path from 'path';
-import { pathToFileURL } from 'url';
+import axios from 'axios';
 
+// إعدادات البوت الأساسية والمزخرفة
 const DEVELOPER_NUMBER = "212784776925"; 
 const BOT_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄-𝘽𝙊𝙏";
 const OWNER_NAME = "𝙆𝘼𝙆𝘼𝘾𝙃𝙄";
 const PREFIX = ".";
 
-// نظام نقاط مخزن مؤقتاً
+// نظام نقاط بسيط مخزن في الذاكرة المؤقتة
 const userPoints = {};
 
 async function startBot() {
@@ -25,7 +25,13 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./session');
     const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket({
+    const sock = makeWASocket.default ? makeWASocket.default({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false, 
+        auth: state,
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
+    }) : makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false, 
@@ -57,7 +63,9 @@ async function startBot() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(`\n✅ تم اتصال [ ${BOT_NAME} ] بنجاح وهو جاهز لاستقبال الأوامر!`);
+            console.log(`\n✨ =========================================`);
+            console.log(`✅ تم اتصال [ ${BOT_NAME} ] بنجاح وهو جاهز تماماً للرد!`);
+            console.log(`========================================= ✨\n`);
         }
     });
 
@@ -84,7 +92,6 @@ async function startBot() {
             const sender = mek.key.participant || mek.key.remoteJid;
             const isOwner = sender.includes(DEVELOPER_NUMBER);
 
-            // تفعيل نقاط التفاعل
             if (!userPoints[sender]) userPoints[sender] = 0;
             userPoints[sender] += 1;
 
@@ -92,31 +99,99 @@ async function startBot() {
                 await sock.sendMessage(from, { text: `╭━━〔 ${BOT_NAME} 〕━━╮\n\n${text}\n\n╰━━━━━━━━━━━━━━╯` }, { quoted: mek });
             };
 
-            // قراءة وتشغيل الأوامر تلقائياً من مجلد "الأوامر" (تم إصلاح المسار بالكامل هنا)
-            const commandsFolder = path.resolve('./الأوامر');
-            if (fs.existsSync(commandsFolder)) {
-                const files = fs.readdirSync(commandsFolder).filter(file => file.endsWith('.js'));
-                
-                for (const file of files) {
-                    const filePath = path.join(commandsFolder, file);
-                    const fileUrl = pathToFileURL(filePath).href; // تحويل المسار إلى صيغة متوافقة مع import دلالي
-                    
-                    const commandFile = await import(fileUrl);
-                    
-                    if (commandFile.default && typeof commandFile.default === 'function') {
-                        await commandFile.default({
-                            command, args, isOwner, reply, DEVELOPER_NUMBER, 
-                            BOT_NAME, OWNER_NAME, PREFIX, sock, from, sender, mek, userPoints
-                        });
-                    }
-                }
-            }
+            // تشغيل الأوامر والـ APIs مباشرة بدون وسيط ومجلدات
+            switch (command) {
+                case 'الاوامر':
+                case 'menu':
+                case 'help':
+                    await reply(`🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝙈𝙀𝙉𝙐 𝙈𝙐𝙇𝙏𝙄-𝘽𝙊𝙏 🌟
 
+👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
+🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
+
+📥 *أقسام التحميل والـ AI:*
+┌──────────────┐
+│ 🤖 ${PREFIX}ذكاء [السؤال] - التحدث مع الذكاء الاصطناعي
+│ 📹 ${PREFIX}فيديو [الرابط] - تحميل فيديو تيك توك/يوتيوب
+│ 🎵 ${PREFIX}صوت [الرابط] - تحميل الأغاني والمقاطع
+└──────────────┘
+
+🎮 *نظام النقاط والألعاب:*
+┌──────────────┐
+│ 🎮 ${PREFIX}العاب - فتح قائمة التسلية والألعاب
+│ 📊 ${PREFIX}نقاطي - عرض رصيدك من النقاط
+│ 🎁 ${PREFIX}هدية - الحصول على نقاط مجانية
+└──────────────┘
+
+⚙️ *أوامر التحكم والمجموعات:*
+┌──────────────┐
+│ 🔒 ${PREFIX}قفل - قفل إرسال الرسائل بالمجموعة
+│ 🔓 ${PREFIX}فتح - فتح إرسال الرسائل بالمجموعة
+└──────────────┘
+
+💡 _تم التطوير بواسطة: ${OWNER_NAME}_`);
+                    break;
+
+                case 'بينج':
+                case 'ping':
+                    await reply(`🚀 *جـااااري الفـحـص...*\n⏱️ البوت يعمل بأعلى كفاءة وسرعة استجابة هائلة!`);
+                    break;
+
+                case 'ذكاء':
+                case 'gpt':
+                    if (args.length < 1) return reply("❌ يرجى كتابة سؤالك بعد الأمر!");
+                    await reply("🤖 *جاري التفكير وتوليد الرد...*");
+                    try {
+                        const res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(args.join(" "))}`);
+                        await reply(res.data?.result || "❌ الخادم لا يستجيب حالياً.");
+                    } catch { reply("❌ حدث خطأ في خادم الذكاء الاصطناعي."); }
+                    break;
+
+                case 'فيديو':
+                    if (args.length < 1) return reply("❌ يرجى وضع رابط الفيديو!");
+                    await reply("⏳ *جاري معالجة الرابط وتحميل الفيديو عبر الـ API...*");
+                    try {
+                        const res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(args)}`);
+                        await sock.sendMessage(from, { video: { url: res.data.result.link }, caption: `✨ تم التحميل بواسطة ${BOT_NAME}` }, { quoted: mek });
+                    } catch { reply("❌ حدث خطأ أثناء جلب الفيديو."); }
+                    break;
+
+                case 'العاب':
+                    await reply(`🎮 *قائمة التسلية ونظام النقاط:*
+                    
+🪙 [ ${PREFIX}نقاطي ] - معرفة نقاطك الحالية
+🎁 [ ${PREFIX}هدية ] - طلب هدية يومية من البوت`);
+                    break;
+
+                case 'نقاطي':
+                    await reply(`🪙 رصيدك الحالي هو: *${userPoints[sender]}* نقطة.`);
+                    break;
+
+                case 'هدية':
+                    const bonus = Math.floor(Math.random() * 50) + 10;
+                    userPoints[sender] += bonus;
+                    await reply(`🎁 مبروك! حصلت على *${bonus}* نقطة هدية مجانية.`);
+                    break;
+
+                case 'قفل':
+                    if (!from.endsWith('@g.us')) return reply("❌ هذا الأمر للمجموعات فقط!");
+                    await sock.groupSettingUpdate(from, 'announcement');
+                    await reply("🔒 تم إغلاق المجموعة بنجاح.");
+                    break;
+
+                case 'فتح':
+                    if (!from.endsWith('@g.us')) return reply("❌ هذا الأمر للمجموعات فقط!");
+                    await sock.groupSettingUpdate(from, 'not_announcement');
+                    await reply("🔓 تم فتح المجموعة بنجاح.");
+                    break;
+
+                default:
+                    break;
+            }
         } catch (err) {
-            console.error("Error in execution: ", err);
+            console.error(err);
         }
     });
 }
 
-startBot().catch(err => console.error("خطأ حرج:", err));
-            
+startBot().catch(err => console.error(err));
