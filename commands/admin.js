@@ -1,79 +1,69 @@
-// ملف: الأوامر/admin.js
-const axios = require('axios');
+export default async function ({ command, args, isOwner, reply, DEVELOPER_NUMBER, BOT_NAME, OWNER_NAME, PREFIX, sock, from, sender, mek }) {
+    switch (command) {
+        case 'الاوامر':
+        case 'menu':
+        case 'help':
+            return reply(`🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝙈𝙀𝙉𝙐 𝙈𝙐𝙇𝙏𝙄-𝘽𝙊𝙏 🌟
 
-// قائمة أرقام الأدمن والمطورين المسموح لهم بالتحكم
-const ADMIN_NUMBERS = ["212784776925@s.whatsapp.net", "212784776925"];
+👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
+🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
 
-module.exports = {
-    name: 'ادمن', // الأمر الرئيسي المكتوب بالشات (.ادمن)
-    aliases: ['أدمن', 'admin', 'التحكم'], // الاختصارات البديلة
-    
-    async execute(sock, msg, args) {
-        const from = msg.key.remoteJid;
-        const sender = msg.key.participant || msg.key.remoteJid;
-        
-        // 1. التحقق الفوري هل المرسل أدمن أم مستخدم عادي
-        const isAdmin = ADMIN_NUMBERS.some(num => sender.includes(num));
-        if (!isAdmin) {
-            return await sock.sendMessage(from, { text: '❌ عذراً، هذا الأمر مخصص فقط لأدمن ومطور البوت كاكاشي!' }, { quoted: msg });
-        }
+📥 *أقسام التحميل والـ AI:*
+┌──────────────┐
+│ 🤖 ${PREFIX}ذكاء [السؤال] - التحدث مع الذكاء الاصطناعي
+│ 📹 ${PREFIX}فيديو [الرابط] - تحميل فيديو تيك توك/يوتيوب
+│ 🎵 ${PREFIX}صوت [الرابط] - تحميل الأغاني والمقاطع
+└──────────────┘
 
-        // إذا لم يكتب الأدمن أي شيء بعد الأمر، تظهر له لوحة التحكم المتاحة عبر الـ API
-        if (args.length === 0) {
-            const adminPanel = ` Welcome Commander ⚡\n` +
-                               `*🎛️ لوحة تحكم أدمن البوت عبر الـ API:*\n\n` +
-                               `• *.ادمن حظر @المستخدم* : لحظر عضو من استخدام البوت\n` +
-                               `• *.ادمن الغاء @المستخدم* : لإلغاء حظر العضو\n` +
-                               `• *.ادمن حالة* : جلب تقرير كامل عن حالة السيرفر والـ API\n` +
-                               `• *.ادمن اعادة* : لإعادة تشغيل محرك البوت تلقائياً`;
-            return await sock.sendMessage(from, { text: adminPanel }, { quoted: msg });
-        }
+🎮 *نظام النقاط والألعاب:*
+┌──────────────┐
+│ 🎮 ${PREFIX}العاب - فتح قائمة التسلية والألعاب
+│ 📊 ${PREFIX}نقاطي - عرض رصيدك من النقاط
+│ 🎁 ${PREFIX}هدية - الحصول على نقاط مجانية
+└──────────────┘
 
-        const subCommand = args[0].toLowerCase();
+⚙️ *أوامر التحكم والمجموعات:*
+┌──────────────┐
+│ 🔒 ${PREFIX}قفل - قفل إرسال الرسائل بالمجموعة
+│ 🔓 ${PREFIX}فتح - فتح إرسال الرسائل بالمجموعة
+│ 🚷 ${PREFIX}طرد [@منشن] - إزالة عضو من المجموعة
+└──────────────┘
 
-        switch (subCommand) {
-            case 'حالة':
-                try {
-                    // جلب بيانات حالة السيرفر والذاكرة عبر الـ API داخلياً
-                    await sock.sendMessage(from, { text: '⏳ جاري فحص استجابة الـ API والسيرفر...' }, { quoted: msg });
-                    
-                    const uptime = process.uptime();
-                    const hours = Math.floor(uptime / 3600);
-                    const minutes = Math.floor((uptime % 3600) / 60);
-                    
-                    const statusText = `📊 *تقرير الـ API والأداء الخاص بالأدمن:*\n\n` +
-                                       `• *حالة الاتصال:* مستقرة ومتصلة بنجاح ✅\n` +
-                                       `• *وقت التشغيل المستمر:* ${hours} ساعة و ${minutes} دقيقة\n` +
-                                       `• *استهلاك الذاكرة:* ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\n` +
-                                       `• *سرعة استجابة الـ API:* ممتازة 🚀`;
-                    await sock.sendMessage(from, { text: statusText }, { quoted: msg });
-                } catch (error) {
-                    await sock.sendMessage(from, { text: '❌ حدث خطأ أثناء الاتصال بـ API فحص الحالة.' }, { quoted: msg });
-                }
-                break;
+💡 _تم التطوير بواسطة: ${OWNER_NAME}_`);
 
-            case 'حظر':
-                // كود الحظر باستخدام منشن للمستخدم المستهدف
-                if (!msg.message.extendedTextMessage || !msg.message.extendedTextMessage.contextInfo.mentionedJid) {
-                    return await sock.sendMessage(from, { text: '❌ يرجى عمل منشن للمستخدم المراد حظره!' }, { quoted: msg });
-                }
-                const targetToBan = msg.message.extendedTextMessage.contextInfo.mentionedJid[0];
-                // هنا يتم إرسال طلب الحظر لقاعدة البيانات أو الـ API الخاص بك
-                await sock.sendMessage(from, { text: `🚫 تم بنجاح حظر المستخدم @${targetToBan.split('@')[0]} من استخدام أوامر البوت.`, mentions: [targetToBan] }, { quoted: msg });
-                break;
+        case 'بينج':
+        case 'ping':
+            return reply(`🚀 *جـااااري الفـحـص...*\n⏱️ البوت يعمل بأعلى كفاءة وسرعة استجابة هائلة!`);
 
-            case 'إعادة':
-            case 'اعادة':
-                await sock.sendMessage(from, { text: '🔄 جاري إعادة تشغيل محرك البوت وتحديث الـ APIs الآن...' }, { quoted: msg });
-                setTimeout(() => {
-                    process.exit(1); // يقوم بإعادة تشغيل البوت تلقائياً إذا كنت تستخدم استضافة مثل PM2 أو Render
-                }, 1000);
-                break;
+        case 'المعلومات':
+        case 'info':
+            return reply(`📝 *مواصفات النظام الخاص بك:*\n\n⚙️ *الاسم:* ${BOT_NAME}\n👑 *المطور:* ${OWNER_NAME}\n🌐 *الرقم:* +${DEVELOPER_NUMBER}\n📌 *النظام:* Termux Node.js`);
 
-            default:
-                await sock.sendMessage(from, { text: '❌ أمر أدمن غير معروف، اكتب `.ادمن` لعرض الخيارات المتاحة.' }, { quoted: msg });
-                break;
-        }
+        case 'قفل':
+            if (!from.endsWith('@g.us')) return reply("❌ هذا الأمر يعمل داخل المجموعات فقط!");
+            await sock.groupSettingUpdate(from, 'announcement');
+            return reply("🔒 تم إغلاق المجموعة بنجاح. الآن يمكن للمشرفين فقط إرسال الرسائل.");
+
+        case 'فتح':
+            if (!from.endsWith('@g.us')) return reply("❌ هذا الأمر يعمل داخل المجموعات فقط!");
+            await sock.groupSettingUpdate(from, 'not_announcement');
+            return reply("🔓 تم فتح المجموعة بنجاح. الآن يمكن للجميع إرسال الرسائل.");
+
+        case 'طرد':
+        case 'kick':
+            if (!from.endsWith('@g.us')) return reply("❌ هذا الأمر يعمل داخل المجموعات فقط!");
+            const mention = mek.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!mention) return reply("❌ يرجى عمل منشن (@) للعضو المراد طرده.");
+            await sock.groupParticipantsUpdate(from, [mention], 'remove');
+            return reply("🚷 تم طرد العضو المحدد بنجاح من المجموعة.");
+
+        case 'نشر':
+        case 'broadcast':
+            if (!isOwner) return reply("❌ عذراً، هذا الأمر مخصص فقط لمطور البوت العظيم.");
+            if (args.length < 1) return reply(`❌ يرجى كتابة نص الرسالة بعد الأمر، مثال:\n${PREFIX}نشر أهلاً بالجميع`);
+            return reply(`📢 *جاري إرسال إعلان المطور لجميع المحادثات...*\n\nالنص: ${args.join(" ")}`);
+
+        default:
+            break;
     }
-};
-                           
+}
