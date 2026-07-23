@@ -22,7 +22,8 @@ async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./session');
     const { version } = await fetchLatestBaileysVersion();
 
-    const sock = makeWASocket.default({
+    // تم إصلاح الاستدعاء هنا بإزالة .default
+    const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false, // تعطيل الـ QR Code تماماً
@@ -49,7 +50,7 @@ async function startBot() {
         }
     }
 
-    // إدارة أحداث الاتصال (تم إصلاح خطأ السطر 57 هنا)
+    // إدارة أحداث الاتصال
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
@@ -104,7 +105,7 @@ async function startBot() {
                 case 'الاوامر':
                 case 'menu':
                 case 'help':
-                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾Hx𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
+                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
 
 👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
 🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
@@ -155,3 +156,4 @@ async function startBot() {
 
 // تشغيل البوت
 startBot().catch(err => console.error("خطأ حرج في تشغيل البوت:", err));
+                        
