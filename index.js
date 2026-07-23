@@ -1,12 +1,12 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
 
-// رقم المطور الخاص بك (صاحب البوت)
+// إعدادات رقم مطور ومستلم البوت
 const OWNER_NUMBER = "212784776925@s.whatsapp.net";
+const phoneNumberToPair = "212784776925"; 
 
-// تحميل الأوامر تلقائياً من مجلد commands
 const commands = new Map();
 const commandsFolder = path.join(__dirname, 'commands');
 
@@ -29,9 +29,26 @@ async function startKakashiBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
-        logger: require('pino')({ level: 'silent' })
+        printQRInTerminal: false, 
+        logger: require('pino')({ level: 'silent' }),
+        browser: ["Ubuntu", "Chrome", "20.0.04"] 
     });
+
+    if (!sock.authState.creds.registered) {
+        await delay(3000); 
+        try {
+            console.log(`\n==================================================`);
+            console.log(`📲 جاري طلب كود الربط للرقم: [ ${phoneNumberToPair} ] ...`);
+            
+            let code = await sock.requestPairingCode(phoneNumberToPair);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            
+            console.log(`\n🔥 كود ربط بوت كاكاشي الخاص بك هو: 👉  [ \x1b[32m${code}\x1b[0m ]  👈`);
+            console.log(`==================================================\n`);
+        } catch (error) {
+            console.error("❌ فشل في جلب كود الربط:", error);
+        }
+    }
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -39,33 +56,12 @@ async function startKakashiBot() {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('تم إغلاق الاتصال. إعادة الاتصال: ', shouldReconnect);
             if (shouldReconnect) startKakashiBot();
         } else if (connection === 'open') {
-            console.log('🚀 محرك بوت كاكاشي يعمل بأعلى كفاءة الآن ومستعد لتلقي الأوامر!');
+            console.log('🚀 محرك بوت كاكاشي متصل عبر رقم الهاتف ويعمل الآن بنجاح 100%!');
         }
     });
 
-    // الترحيب التلقائي بالأعضاء الجدد في المجموعات
-    sock.ev.on('group-participants.update', async (anu) => {
-        try {
-            const metadata = await sock.groupMetadata(anu.id);
-            const participants = anu.participants;
-            for (let num of participants) {
-                if (anu.action == 'add') {
-                    const welcomeText = `✨ *مرحباً بك في المجموعة!* \n\n👤 أهلاً يا @${num.split('@')}\n🏡 نورت مجموعة: *${metadata.subject}*\n\n🥷🏻 أنا بوت *كاكاشي*، اكتب (.الاوامر) لترى ما يمكنني فعله!`;
-                    await sock.sendMessage(anu.id, { 
-                        text: welcomeText, 
-                        mentions: [num] 
-                    });
-                }
-            }
-        } catch (err) {
-            console.log("خطأ في نظام الترحيب التلقائي:", err);
-        }
-    });
-
-    // إدارة واستقبال الرسائل والأوامر المدمجة
     sock.ev.on('messages.upsert', async m => {
         const msg = m.messages;
         if (!msg || !msg.message || msg.key.fromMe) return;
@@ -74,11 +70,9 @@ async function startKakashiBot() {
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
         const cleanText = text.trim().toLowerCase();
 
-        // معرفة الشخص المرسل وحالته
         const sender = msg.key.participant || msg.key.remoteJid;
         const isOwner = sender.includes("212784776925");
 
-        // الردود التلقائية الذكية (بدون بادئة)
         if (cleanText === 'السلام عليكم' || cleanText === 'سلام عليكم') {
             return await sock.sendMessage(from, { text: 'وعليكم السلام ورحمة الله وبركاته يا نينجا 🥷🏻 نورت!' }, { quoted: msg });
         }
@@ -89,33 +83,31 @@ async function startKakashiBot() {
             return await sock.sendMessage(from, { text: `👑 مطوري ومبرمجي هو القائد كاكاشي، وهذا هو رقمه المباشر:\nwa.me/212784776925` }, { quoted: msg });
         }
 
-        // إعداد البادئة للأوامر الفردية (.)
         const prefix = '.';
         if (!text.startsWith(prefix)) return;
 
         const args = text.slice(prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
 
-        // [ ميزة جديدة ]: أمر قائمة الأوامر الفنية والمقسمة بشكل جميل
         if (commandName === 'الاوامر' || commandName === 'أوامر' || commandName === 'help' || commandName === 'menu') {
             const menuText = `
 ✨ ━━━━━━ 🜲 *𝐊𝐀𝐊𝐀𝐒𝐇𝐈 𝐁𝐎𝐓* 🜲 ━━━━━━ ✨
 
 🥷🏻 *مرحباً بك في قائمة أوامر بوت كاكاشي الشاملة!*
-👤 *المطور:* @${OWNER_NUMBER.split('@')[0]}
-⚡ *البادئة الحالية:* [  *${prefix}*  ]
+👤 *المطور:* @${OWNER_NUMBER.split('@')}
+⚡ *البادئة الحالية:* [  *.*  ]
 
 👑 ━━━ ❪ *🥷🏻 قـسـم الـمـطـور* ❫ ━━━ 👑
-» \`${prefix}فحص\` ➪ لمعرفة سرعة استجابة المحرك.
+» \`.فحص\` ➪ لمعرفة سرعة استجابة المحرك.
 » \`المطور\` ➪ جلب رابط المحادثة المباشر لصاحب البوت.
 
 🎨 ━━━ ❪ *✍️ قـسـم الـزخـرفـة* ❫ ━━━ 🎨
-» \`${prefix}زخرف\` [النص] ➪ زخرفة النصوص الإنجليزية والأرقام بـ 16 نمطاً مذهلاً دفعة واحدة.
-» _مثال:_ \`${prefix}زخرف Kakashi\`
+» \`.زخرف\` [النص] ➪ زخرفة النصوص الإنجليزية والأرقام بـ 16 نمطاً مذهلاً دفعة واحدة.
+» _مثال:_ \`.زخرف Kakashi\`
 
 🎙️ ━━━ ❪ *🗣️ قـسـم الـنـطـق والـصـوت* ❫ ━━━ 🎙️
-» \`${prefix}قول\` [الكلام] ➪ تحويل النص المكتوب إلى رسالة صوتية مسموعة داخل الشات.
-» _مثال:_ \`${prefix}قول أهلاً بكم في عالم النينجا\`
+» \`.قول\` [الكلام] ➪ تحويل النص المكتوب إلى رسالة صوتية مسموعة داخل الشات.
+» _مثال:_ \`.قول أهلاً بكم في عالم النينجا\`
 
 🤖 ━━━ ❪ *⚙️ الـردود الـتـلـقـائـيـة* ❫ ━━━ 🤖
 • البوت يتفاعل تلقائياً عند كتابة العبارات التالية (بدون نقطة):
@@ -123,41 +115,32 @@ async function startKakashiBot() {
 ➪ \`كاكاشي\`
 ➪ \`المطور\`
 
-✨ ━━━━━━━━━━━━━━━━━━━━━━━ ✨
-💡 *ملاحظة:* تأكد من كتابة النقطة (*.*) قبل الأوامر الفرعية لكي يعمل معك المحرك بنجاح.
-`;
-            return await sock.sendMessage(from, { 
-                text: menuText,
-                mentions: [OWNER_NUMBER]
-            }, { quoted: msg });
+✨ ━━━━━━━━━━━━━━━━━━━━━━━ ✨`;
+            return await sock.sendMessage(from, { text: menuText, mentions: [OWNER_NUMBER] }, { quoted: msg });
         }
 
-        // أمر فحص السرعة والحالة (Ping) المدمج
         if (commandName === 'فحص' || commandName === 'ping') {
             const startTime = Date.now();
-            await sock.sendMessage(from, { text: '⚡ جاري فحص استجابة محرك كاكاشي...' }, { quoted: msg }).then(async (sentMsg) => {
+            await sock.sendMessage(from, { text: '⚡ جاري فحص استجابة محرك كاكاشي...' }, { quoted: msg }).then(async () => {
                 const responseTime = Date.now() - startTime;
                 await sock.sendMessage(from, { text: `🚀 البوت شغال تمام!\n⏱️ سرعة الاستجابة: *${responseTime}ms*` }, { quoted: msg });
             });
             return;
         }
 
-        // تشغيل الأوامر الخارجيّة من المجلد
         const command = commands.get(commandName);
         if (command) {
             if (command.ownerOnly && !isOwner) {
                 return await sock.sendMessage(from, { text: '❌ عذراً، هذا الأمر مخصص فقط لمطور البوت!' }, { quoted: msg });
             }
-
             try {
                 await command.execute(sock, msg, args, { isOwner, OWNER_NUMBER });
             } catch (error) {
-                console.error(`خطأ في تشغيل أمر المجلد الخارجي ${commandName}:`, error);
-                await sock.sendMessage(from, { text: '❌ حدث خطأ داخلي أثناء معالجة الأمر الخارجي.' });
+                console.error(error);
             }
         }
     });
 }
 
 startKakashiBot();
-        
+                                     
