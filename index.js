@@ -5,7 +5,6 @@ import makeWASocket, {
     fetchLatestBaileysVersion 
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { Boom } from '@hapi/boom';
 import fs from 'fs';
 
 // إعدادات البوت الأساسية
@@ -50,12 +49,15 @@ async function startBot() {
         }
     }
 
-    // إدارة أحداث الاتصال
+    // إدارة أحداث الاتصال (تم إصلاح خطأ السطر 57 هنا)
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('⚠️ تم إغلاق الاتصال بسبب: ', lastDisconnect.error, ', جاري إعادة الاتصال: ', shouldReconnect);
+            const errorOutput = lastDisconnect && lastDisconnect.error && lastDisconnect.error.output;
+            const statusCode = errorOutput ? errorOutput.statusCode : null;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            console.log('⚠️ تم إغلاق الاتصال، جاري إعادة الاتصال: ', shouldReconnect);
             if (shouldReconnect) {
                 startBot();
             }
@@ -72,12 +74,11 @@ async function startBot() {
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             const mek = chatUpdate.messages[0];
-            if (!mek.message) return;
+            if (!mek || !mek.message) return;
             if (mek.key.fromMe) return;
 
             const from = mek.key.remoteJid;
             const type = Object.keys(mek.message)[0];
-            const content = JSON.stringify(mek.message);
             
             // استخراج النص من الرسالة
             let body = "";
@@ -86,7 +87,7 @@ async function startBot() {
             else if (type === 'imageMessage') body = mek.message.imageMessage.caption;
             else if (type === 'videoMessage') body = mek.message.videoMessage.caption;
 
-            if (!body.startsWith(PREFIX)) return;
+            if (!body || !body.startsWith(PREFIX)) return;
 
             const args = body.trim().split(/ +/).slice(1);
             const command = body.slice(PREFIX.length).trim().split(/ +/).shift().toLowerCase();
@@ -103,7 +104,7 @@ async function startBot() {
                 case 'الاوامر':
                 case 'menu':
                 case 'help':
-                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾𝙃𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
+                    const menuText = `🌟 𝙆𝘼𝙆𝘼𝘾Hx𝙄 - 𝘽𝙊𝙏 𝙈𝙀𝙉𝙐 🌟
 
 👑 𝗠𝗢𝗗𝗘: ${isOwner ? '𝗠𝗮𝘀𝘁𝗲𝗿 (المطور)' : '𝗨𝘀𝗲𝗿 (مستخدم)'}
 🔮 𝗣𝗥𝗘𝗙𝗜𝗫: [ ${PREFIX} ]
@@ -134,18 +135,15 @@ async function startBot() {
                     await reply(`📝 *مواصفات النظام الخاص بك:*\n\n⚙️ *الاسم:* ${BOT_NAME}\n👑 *المطور:* ${OWNER_NAME}\n🌐 *الرقم:* +${DEVELOPER_NUMBER}\n📌 *النظام:* Termux Node.js`);
                     break;
 
-                // أوامر المطور فقط
                 case 'نشر':
                 case 'broadcast':
                     if (!isOwner) return reply("❌ عذراً، هذا الأمر مخصص فقط لمطور البوت العظيم.");
                     if (args.length < 1) return reply(`❌ يرجى كتابة نص الرسالة بعد الأمر، مثال:\n${PREFIX}نشر أهلاً بالجميع`);
                     const bcText = args.join(" ");
                     await reply(`📢 *جاري إرسال إعلان المطور لجميع المحادثات...*\n\nالنص: ${bcText}`);
-                    // هنا يمكن إضافة حلقة تكرار لإرسالها لجميع المجموعات لاحقاً
                     break;
 
                 default:
-                    // تجاهل الأوامر غير المعرفة أو إرسال تنبيه بسيط
                     break;
             }
 
