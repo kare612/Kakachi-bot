@@ -1,26 +1,27 @@
 import axios from 'axios';
 
-// سيرفر API بديل مستقر وسريع جداً لعام 2026
-const API_BASE = "https://vreden.web.id"; 
+// الانتقال إلى سيرفر API جديد ومستقر تماماً وبدون انقطاع
+const API_BASE = "https://shizuka.my.id"; 
 
 const axiosConfig = {
-  timeout: 12000, // مهلة 12 ثانية كحد أقصى لمنع التجميد والـ Timeout
-  headers: { 'User-Agent': 'Mozilla/5.0' }
+  timeout: 15000, // مهلة 15 ثانية كحد أقصى لحماية البوت من التعليق
+  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
 };
 
-export default async function ({ command, args, reply, PREFIX, sock, from }) {
+export default async function ({ command, args, reply, PREFIX }) {
   
-  // 1. أمر البحث
+  // 1. أمر البحث عن فيلم أو مسلسل
   if (command === 'اكوام' || command === 'akwam') {
     if (args.length < 1) return reply(`❌ يرجى كتابة اسم الفيلم أو المسلسل!\nمثال: ${PREFIX}اكوام ناروتو`);
     
-    await reply("🎬 *جاري البحث في خوادم أكوام الحديثة...*");
+    await reply("🎬 *جاري البحث في السيرفر الجديد والآمن...*");
     try {
       const res = await axios.get(`${API_BASE}?search=${encodeURIComponent(args.join(" "))}`, axiosConfig);
       
+      // قراءة البيانات من هيكلية الخادم الجديد
       if (res.data && res.data.result && res.data.result.length > 0) {
         const results = res.data.result;
-        let listText = `🎬 *نتائج البحث في موقع أكوام:*\n\n`;
+        let listText = `🎬 *نتائج البحث في موقع أكوام المطور:*\n\n`;
         
         results.slice(0, 10).forEach((item, index) => {
           const contentUrl = item.url || item.link;
@@ -29,10 +30,11 @@ export default async function ({ command, args, reply, PREFIX, sock, from }) {
         });
         await reply(listText);
       } else {
-        return reply("❌ لم يتم العثور على نتائج، جرب اسماً آخر بصيغة مختلفة.");
+        return reply("❌ لم يتم العثور على نتائج، جرب كتابة الاسم بطريقة أخرى.");
       }
     } catch (err) {
-      return reply("❌ السيرفر يواجه ضغطاً حالياً ولم يستجب، جرب مرة أخرى لاحقاً.");
+      console.error(err);
+      return reply("❌ السيرفر الحالي يواجه ضغطاً كبيراً، يرجى إعادة المحاولة بعد ثوانٍ قليلة.");
     }
   }
 
@@ -41,7 +43,7 @@ export default async function ({ command, args, reply, PREFIX, sock, from }) {
     if (args.length < 1) return reply("❌ يرجى وضع رابط ميديا أكوام المتواجد في القائمة!");
     const targetUrl = args[0];
 
-    await reply("⏳ *جاري سحب تفاصيل الجودات وروابط التحميل الفورية...*");
+    await reply("⏳ *جاري جلب تفاصيل الجودات وروابط التحميل الفورية...*");
     try {
       const res = await axios.get(`${API_BASE}?url=${encodeURIComponent(targetUrl)}`, axiosConfig);
       
@@ -49,11 +51,11 @@ export default async function ({ command, args, reply, PREFIX, sock, from }) {
         const content = res.data.result;
         let movieText = `🎬 *المحتوى:* ${content.title || 'أكوام ميديا'}\n\n`;
         
-        // التحقق من مصفوفة التحميلات المتاحة
-        const downloads = content.downloads || content.downloadLinks;
-        if (downloads && downloads.length > 0) {
+        // التحقق من مصفوفة التحميلات المتاحة في السيرفر الجديد
+        const downloads = content.downloads || content.downloadLinks || [];
+        if (downloads.length > 0) {
           downloads.forEach((link) => {
-            const finalUrl = link.downloadUrl || link.link || link.downloadPageUrl;
+            const finalUrl = link.downloadUrl || link.link || link.url;
             movieText += `🎯 *الجودة:* ${link.quality || 'عالية'}\n🔗 *رابط مباشر:* ${finalUrl}\n\n`;
           });
           movieText += `💡 _اضغط على الرابط المباشر للجودة المطلوبة للتحميل الفوري عبر المتصفح!_`;
@@ -65,7 +67,8 @@ export default async function ({ command, args, reply, PREFIX, sock, from }) {
         await reply("❌ فشل السيرفر في فك محتويات الرابط، تأكد من صحته.");
       }
     } catch (err) {
-      await reply("❌ حدث خطأ أو انتهت مهلة طلب الروابط من السيرفر.");
+      console.error(err);
+      await reply("❌ حدث خطأ أثناء جلب الروابط من السيرفر المطور.");
     }
   }
 }
