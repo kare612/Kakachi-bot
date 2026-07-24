@@ -1,318 +1,309 @@
-import axios from 'axios';
+// Api By kakachi Dev
+// Code By kakachi Dev
+// قناة المطور: https://whatsapp.com/channel/0029Vb7EzH0LY6dERNgelG3b
+// Vocalremover - إزالة الموسيقى بالذكاء الاصطناعي
 
-// ====================================
-// API متعدد الأغراض - فيديوهات، رياضة، صور، صوتيات، وأكثر
-// ====================================
+import axios from 'axios'
+import FormData from 'form-data'
+import { fileTypeFromBuffer } from 'file-type'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+import fs from 'fs'
+import path from 'path'
+import { tmpdir } from 'os'
 
-// APIs موثوقة وسريعة
-const APIS = {
-  movies: "https://api.consumet.org/movies/flixhq", // أفلام ومسلسلات
-  sports: "https://api.api-sports.io/v3", // ملخصات رياضية
-  anime: "https://api.consumet.org/anime/gogoanime", // أنميات
-  music: "https://api.spotify.com/v1", // موسيقى
-  images: "https://api.unsplash.com" // صور عالية الجودة
-};
+const execPromise = promisify(exec)
 
-const axiosConfig = {
-  timeout: 20000,
-  headers: { 
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-  }
-};
-
-// ====================================
-// وظائف مساعدة
-// ====================================
-
-async function searchMovies(query) {
-  try {
-    const res = await axios.get(`${APIS.movies}/search?query=${encodeURIComponent(query)}`, axiosConfig);
-    return res.data?.results || [];
-  } catch (err) {
-    console.error('Movie search error:', err.message);
-    return [];
-  }
+function _r(s) {
+  return s.split('+').map(t => t.trim().replace(/[()']/g, '')).join('')
 }
 
-async function searchAnime(query) {
-  try {
-    const res = await axios.get(`${APIS.anime}/search?query=${encodeURIComponent(query)}`, axiosConfig);
-    return res.data?.results || [];
-  } catch (err) {
-    console.error('Anime search error:', err.message);
-    return [];
-  }
+const VOCAL_API    = _r("('https') + '://' + 'aivocalremover' + ('.') + 'com'")
+const VOCAL_UPLOAD = _r("('https') + '://' + 'aivocalremover' + ('.') + 'com' + '/api/v2/FileUpload'")
+const VOCAL_PROCESS = _r("('https') + '://' + 'aivocalremover' + ('.') + 'com' + '/api/v2/ProcessFile'")
+const CATBOX_API    = _r("('https') + '://' + 'catbox' + ('.') + 'moe' + '/user/api' + ('.') + 'php'")
+const LITTERBOX_API = _r("('https') + '://' + 'litterbox' + ('.') + 'catbox' + ('.') + 'moe' + '/resources/internals/api' + ('.') + 'php'")
+
+const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+const KEY = 'X9QXlU9PaCqGWpnP1Q4IzgXoKinMsKvMuMn3RYXnKHFqju8VfScRmLnIGQsJBnbZFdcKyzeCDOcnJ3StBmtT9nDEXJn'
+
+async function getMedia(quoted, conn) {
+    try {
+        if (conn && typeof conn.downloadMediaMessage === 'function') {
+            const buf = await conn.downloadMediaMessage(quoted)
+            if (buf) return buf
+        }
+
+        try {
+            const { downloadContentFromMessage } = await import('@whiskeysockets/baileys')
+            const types = {
+                imageMessage: 'image',
+                videoMessage: 'video',
+                audioMessage: 'audio',
+                documentMessage: 'document',
+                stickerMessage: 'sticker'
+            }
+            
+            let mtype = quoted.mtype
+            if (!mtype && quoted.message) {
+                const keys = Object.keys(quoted.message)
+                mtype = keys.find(k => k.endsWith('Message'))
+            }
+            
+            const mKind = types[mtype]
+            if (mKind) {
+                const content = quoted.message?.[mtype] || quoted[mtype]
+                if (content) {
+                    const stream = await downloadContentFromMessage(content, mKind)
+                    const chunks = []
+                    for await (const chunk of stream) chunks.push(chunk)
+                    return Buffer.concat(chunks)
+                }
+            }
+        } catch (e) {
+            console.error('[downloadContentFromMessage] Error:', e.message)
+        }
+
+        if (typeof quoted.download === 'function') {
+            return await quoted.download()
+        }
+
+        throw new Error('تعذّر تحميل الميديا')
+    } catch (error) {
+        console.error('[getMedia] Error:', error.message)
+        throw new Error(`فشل تحميل الملف: ${error.message}`)
+    }
 }
 
-async function searchImages(query) {
-  try {
-    const res = await axios.get(`${APIS.images}/search/photos?query=${encodeURIComponent(query)}&per_page=5`, {
-      ...axiosConfig,
-      headers: { ...axiosConfig.headers, 'Authorization': 'Client-ID demo' }
-    });
-    return res.data?.results || [];
-  } catch (err) {
-    console.error('Image search error:', err.message);
-    return [];
-  }
+async function getSession() {
+    const res = await fetch(VOCAL_API, { headers: { 'User-Agent': UA } })
+    const cookie = (res.headers.get('set-cookie') || '').split(';')[0]
+    if (!cookie) throw new Error('فشل الحصول على session')
+    return cookie
 }
 
-async function getMovieDetails(movieId) {
-  try {
-    const res = await axios.get(`${APIS.movies}/info?id=${movieId}`, axiosConfig);
-    return res.data;
-  } catch (err) {
-    console.error('Movie details error:', err.message);
-    return null;
-  }
+async function uploadFile(buffer, filename, cookie) {
+    const form = new FormData()
+    const mimeType = filename.endsWith('.mp4') ? 'video/mp4' : 'audio/mpeg'
+    form.append('fileName', buffer, { filename: filename, contentType: mimeType })
+
+    const res = await axios.post(VOCAL_UPLOAD, form, {
+        headers: {
+            'User-Agent': UA,
+            'Cookie': cookie,
+            'Origin': VOCAL_API,
+            'Referer': `${VOCAL_API}/`,
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest',
+            ...form.getHeaders()
+        },
+        timeout: 120000
+    })
+    
+    const data = res.data
+    if (data.error || !data.file_name) throw new Error(data.message || 'فشل رفع الملف')
+    return data.file_name
 }
 
-async function getAnimeDetails(animeId) {
-  try {
-    const res = await axios.get(`${APIS.anime}/info?id=${animeId}`, axiosConfig);
-    return res.data;
-  } catch (err) {
-    console.error('Anime details error:', err.message);
-    return null;
-  }
+async function processFile(fileName, cookie) {
+    const res = await axios.post(VOCAL_PROCESS, 
+        new URLSearchParams({ 
+            file_name: fileName, 
+            action: 'watermark_video', 
+            key: KEY, 
+            web: 'web' 
+        }),
+        {
+            headers: {
+                'User-Agent': UA,
+                'Cookie': cookie,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Origin': VOCAL_API,
+                'Referer': `${VOCAL_API}/`,
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            timeout: 300000
+        }
+    )
+    
+    const data = res.data
+    if (data.error) throw new Error(data.message || 'فشل استخراج الصوت')
+    if (!data.vocal_path || !data.instrumental_path) throw new Error('لم يتم إرجاع روابط الملفات')
+    return { vocal: data.vocal_path, instrumental: data.instrumental_path }
 }
 
-// ====================================
-// الأوامر الرئيسية
-// ====================================
+async function uploadLitterbox(buffer, fileName) {
+    const form = new FormData()
+    const mimeType = fileName.endsWith('.mp4') ? 'video/mp4' : 'audio/mpeg'
+    form.append('reqtype', 'fileupload')
+    form.append('time', '72h')
+    form.append('fileToUpload', buffer, { filename: fileName, contentType: mimeType })
 
-export default async function ({ command, args, reply, PREFIX }) {
+    const res = await axios.post(LITTERBOX_API, form, {
+        headers: { ...form.getHeaders(), 'User-Agent': UA },
+        timeout: 120000
+    })
+    const text = String(res.data).trim()
+    if (!text.startsWith('https://')) throw new Error(text)
+    return text
+}
 
-  // ===== 1. أمر البحث عن أفلام ومسلسلات =====
-  if (command === 'اكوام' || command === 'akwam' || command === 'فيلم' || command === 'movie') {
-    if (args.length < 1) {
-      return reply(`❌ يرجى كتابة اسم الفيلم أو المسلسل!\n\n📌 *الأمثلة:*\n${PREFIX}اكوام Inception\n${PREFIX}فيلم أفاتار\n${PREFIX}akwam Breaking Bad`);
-    }
-    
-    await reply("🎬 *جاري البحث الفوري في قاعدة الأفلام والمسلسلات...*");
+async function uploadCatboxFromUrl(url) {
+    const form = new FormData()
+    form.append('reqtype', 'urlupload')
+    form.append('url', url)
+
+    const res = await axios.post(CATBOX_API, form, {
+        headers: { ...form.getHeaders(), 'User-Agent': UA },
+        timeout: 60000
+    })
+    const text = String(res.data).trim()
+    if (!text.startsWith('https://')) throw new Error(text)
+    return text
+}
+
+async function toCatbox(buffer, fileName) {
+    const tempUrl = await uploadLitterbox(buffer, fileName)
+    return await uploadCatboxFromUrl(tempUrl)
+}
+
+async function downloadUrl(url) {
+    const res = await axios.get(url, {
+        responseType: 'arraybuffer',
+        headers: { 'User-Agent': UA },
+        timeout: 120000
+    })
+    return Buffer.from(res.data)
+}
+
+async function mergeAudioWithVideo(videoBuffer, audioUrl, outputPath) {
+    const videoPath = path.join(tmpdir(), `temp_video_${Date.now()}.mp4`)
+    fs.writeFileSync(videoPath, videoBuffer)
+
+    const audioBuffer = await downloadUrl(audioUrl)
+    const audioPath = path.join(tmpdir(), `temp_audio_${Date.now()}.mp3`)
+    fs.writeFileSync(audioPath, audioBuffer)
+
+    const cmd = `ffmpeg -i "${videoPath}" -i "${audioPath}" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest "${outputPath}" -y`
+
     try {
-      const query = args.join(" ");
-      const results = await searchMovies(query);
-      
-      if (results.length > 0) {
-        let listText = `🎬 *نتائج البحث عن: "${query}"*\n\n`;
-        
-        results.slice(0, 8).forEach((item, index) => {
-          const itemId = item.id || item.imdbId;
-          listText += `*${index + 1}.* 🎭 *${item.title || item.name}*\n`;
-          if (item.year) listText += `   📅 *السنة:* ${item.year}\n`;
-          if (item.type) listText += `   📺 *النوع:* ${item.type}\n`;
-          if (item.releaseDate) listText += `   📖 *التاريخ:* ${item.releaseDate}\n`;
-          listText += `   🔗 *اطلب التفاصيل:* \`${PREFIX}تفاصيل ${index + 1}\`\n\n`;
-        });
-        
-        listText += `💡 _اختر رقم المحتوى وأرسل: ${PREFIX}تفاصيل [الرقم] لعرض الروابط والجودات_`;
-        return await reply(listText);
-      } else {
-        return reply("❌ لم يتم العثور على نتائج. تأكد من كتابة الاسم بشكل صحيح.");
-      }
-    } catch (err) {
-      console.error(err);
-      return reply("❌ حدث خطأ أثناء البحث. يرجى إعادة المحاولة بعد قليل.");
+        await execPromise(cmd)
+    } catch (error) {
+        throw new Error(`فشل دمج الصوت مع الفيديو: ${error.message}`)
+    } finally {
+        try { fs.unlinkSync(videoPath) } catch {}
+        try { fs.unlinkSync(audioPath) } catch {}
     }
-  }
 
-  // ===== 2. أمر البحث عن الأنميات =====
-  if (command === 'انمي' || command === 'anime') {
-    if (args.length < 1) {
-      return reply(`❌ يرجى كتابة اسم الأنمي!\n\n📌 *الأمثلة:*\n${PREFIX}انمي Naruto\n${PREFIX}anime One Piece\n${PREFIX}انمي Death Note`);
-    }
-    
-    await reply("⚡ *جاري البحث عن الأنمي...*");
+    return outputPath
+}
+
+let handler = async (m, { conn, args, usedPrefix, command }) => {
     try {
-      const query = args.join(" ");
-      const results = await searchAnime(query);
-      
-      if (results.length > 0) {
-        let listText = `⚡ *نتائج البحث عن أنمي: "${query}"*\n\n`;
-        
-        results.slice(0, 8).forEach((item, index) => {
-          listText += `*${index + 1}.* 🎨 *${item.title || item.name}*\n`;
-          if (item.status) listText += `   📊 *الحالة:* ${item.status}\n`;
-          if (item.episodes) listText += `   📺 *الحلقات:* ${item.episodes}\n`;
-          if (item.rating) listText += `   ⭐ *التقييم:* ${item.rating}\n`;
-          listText += `   🔗 *اطلب:* \`${PREFIX}انمي-تفاصيل ${index + 1}\`\n\n`;
-        });
-        
-        listText += `💡 _أرسل: ${PREFIX}انمي-تفاصيل [الرقم] لعرض الحلقات والروابط_`;
-        return await reply(listText);
-      } else {
-        return reply("❌ لم يتم العثور على نتائج للأنمي.");
-      }
-    } catch (err) {
-      console.error(err);
-      return reply("❌ حدث خطأ في البحث عن الأنمي.");
-    }
-  }
+        const quoted = m.quoted
+        const isUrl = args[0] && /^https?:\/\//i.test(args[0])
 
-  // ===== 3. أمر البحث عن الصور =====
-  if (command === 'صور' || command === 'images' || command === 'صورة') {
-    if (args.length < 1) {
-      return reply(`❌ يرجى كتابة موضوع الصور المطلوبة!\n\n📌 *الأمثلة:*\n${PREFIX}صور منتخب السعودية\n${PREFIX}صور كريستيانو رونالدو\n${PREFIX}images nature`);
-    }
-    
-    await reply("🖼️ *جاري البحث عن الصور عالية الجودة...*");
-    try {
-      const query = args.join(" ");
-      const results = await searchImages(query);
-      
-      if (results.length > 0) {
-        let listText = `🖼️ *صور: "${query}"*\n\n`;
-        
-        results.forEach((item, index) => {
-          listText += `*${index + 1}.* 📸 *${item.alt_description || 'صورة'}*\n`;
-          listText += `   👤 *المصور:* ${item.user?.name || 'مجهول'}\n`;
-          listText += `   🔗 *الرابط:* ${item.urls?.regular}\n\n`;
-        });
-        
-        listText += `💡 _اضغط على الروابط لتحميل الصور بجودة عالية_`;
-        return await reply(listText);
-      } else {
-        return reply("❌ لم يتم العثور على صور.");
-      }
-    } catch (err) {
-      console.error(err);
-      return reply("❌ حدث خطأ في البحث عن الصور.");
-    }
-  }
+        if (!quoted && !isUrl) {
+            await m.react('❌')
+            return m.reply(
+                `🎵 *AI Vocal Remover - عزل الصوت من الفيديو*\n\n` +
+                `📝 *الاستخدام:*\n` +
+                `• رد على *فيديو* بالأمر \`عزل\`\n` +
+                `• أو أرسل رابط فيديو مع الأمر\n\n` +
+                `💡 *أمثلة:*\n` +
+                `\`${usedPrefix}${command}\` (رد على فيديو)\n` +
+                `\`${usedPrefix}${command} https://example.com/video.mp4\`\n\n` +
+                `📌 *الدعم:* MP4 · MOV · AVI · WEBM\n` +
+                `⏱ *الوقت المتوقع:* 30 ثانية إلى 3 دقائق`
+            )
+        }
 
-  // ===== 4. أمر رياضة ومنتخبات =====
-  if (command === 'رياضة' || command === 'sports' || command === 'كورة' || command === 'منتخب') {
-    if (args.length < 1) {
-      return reply(`⚽ *أوامر الرياضة المتاحة:*\n\n${PREFIX}كورة محمد صلاح\n${PREFIX}كورة منتخب السعودية\n${PREFIX}sports مانشستر يونايتد\n${PREFIX}رياضة البرازيل`);
-    }
-    
-    await reply("⚽ *جاري البحث عن محتوى رياضي...*");
-    try {
-      const query = args.join(" ");
-      let searchText = `⚽ *المحتوى الرياضي:* ${query}\n\n`;
-      searchText += `🔍 *البحث عن:*\n`;
-      searchText += `• لاعبين ومحترفين\n`;
-      searchText += `• منتخبات وأندية\n`;
-      searchText += `• ملخصات مباريات\n`;
-      searchText += `• إحصائيات وتصنيفات\n\n`;
-      searchText += `📌 *مثال:* ${PREFIX}كورة ${query}\n`;
-      searchText += `💡 _جارٍ تحميل البيانات الرياضية للنتيجة المطلوبة..._`;
-      
-      return await reply(searchText);
-    } catch (err) {
-      console.error(err);
-      return reply("❌ حدث خطأ في البحث عن الرياضة.");
-    }
-  }
+        if (quoted) {
+            const msg = quoted.message || quoted
+            const hasVideo = msg?.videoMessage || msg?.mtype === 'videoMessage'
+            const hasAudio = msg?.audioMessage || msg?.mtype === 'audioMessage'
 
-  // ===== 5. أمر الموسيقى والصوتيات =====
-  if (command === 'موسيقى' || command === 'music' || command === 'اغنية' || command === 'song') {
-    if (args.length < 1) {
-      return reply(`🎵 *أوامر الموسيقى المتاحة:*\n\n${PREFIX}موسيقى Blinding Lights\n${PREFIX}music Eminem\n${PREFIX}اغنية محمد منصور\n${PREFIX}song BTS`);
-    }
-    
-    await reply("🎵 *جاري البحث عن الموسيقى والأغاني...*");
-    try {
-      const query = args.join(" ");
-      let musicText = `🎵 *البحث عن موسيقى:* ${query}\n\n`;
-      musicText += `🎧 *المتاح:*\n`;
-      musicText += `• أغاني عربية\n`;
-      musicText += `• موسيقى عالمية\n`;
-      musicText += `• موسيقى جنجل\n`;
-      musicText += `• ملفات صوتية\n\n`;
-      musicText += `💡 _سيتم جلب أفضل النتائج المتطابقة للبحث_`;
-      
-      return await reply(musicText);
-    } catch (err) {
-      console.error(err);
-      return reply("❌ حدث خطأ في البحث عن الموسيقى.");
-    }
-  }
+            if (hasAudio && !hasVideo) {
+                await m.react('❌')
+                return m.reply(`⚠️ *هذا الأمر مخصص للفيديوهات فقط*\n\n📌 *للاستخدام الصحيح:*\n• رد على *فيديو* بالأمر \`عزل\``)
+            }
 
-  // ===== 6. أمر التفاصيل الكاملة للفيلم =====
-  if (command === 'تفاصيل' || command === 'details') {
-    await reply("📺 *جاري تحميل التفاصيل الكاملة...*");
-    
-    let detailsText = `📺 *معلومات المحتوى الكاملة:*\n\n`;
-    detailsText += `🎬 *العنوان:* محتوى مختار\n`;
-    detailsText += `⭐ *التقييم:* 8.5/10\n`;
-    detailsText += `📅 *السنة:* 2024\n`;
-    detailsText += `📖 *النوع:* أكشن، درما\n`;
-    detailsText += `⏱️ *المدة:* ساعتان و 45 دقيقة\n\n`;
-    detailsText += `📝 *الوصف:*\nمحتوى متنوع وعالي الجودة يقدم لك أفضل تجربة مشاهدة\n\n`;
-    detailsText += `📥 *الجودات المتاحة:*\n`;
-    detailsText += `• 1080p - تحميل سريع\n`;
-    detailsText += `• 720p - توازن مثالي\n`;
-    detailsText += `• 480p - نقل خفيف\n\n`;
-    detailsText += `🔗 *رابط التحميل:*\n`;
-    detailsText += `تم تجهيز الروابط المباشرة للتحميل الفوري\n\n`;
-    detailsText += `💡 _اضغط على الرابط الأزرق لبدء التحميل_`;
-    
-    return await reply(detailsText);
-  }
+            if (!hasVideo && !isUrl) {
+                await m.react('❌')
+                return m.reply(`⚠️ *يرجى الرد على فيديو*\n\n📌 *للاستخدام الصحيح:*\n• رد على *فيديو* بالأمر \`عزل\``)
+            }
+        }
 
-  // ===== 7. أمر التنزيل المباشر =====
-  if (command === 'تحميل' || command === 'download' || command === 'dl') {
-    if (args.length < 1) {
-      return reply(`❌ يرجى تحديد المحتوى المطلوب تحميله!\n\n${PREFIX}تحميل [رابط أو اسم]`);
+        await m.react('⏳')
+        await m.reply('⏳ *جاري المعالجة...*\n_يرجى الانتظار 30 ثانية إلى 3 دقائق_')
+
+        let videoBuffer, fileName
+        if (isUrl) {
+            await m.reply('📥 جاري تحميل الفيديو من الرابط...')
+            videoBuffer = await downloadUrl(args[0])
+            const ext = args[0].split('?')[0].split('.').pop() || 'mp4'
+            fileName = `video.${ext}`
+        } else {
+            await m.reply('📥 جاري تحميل الفيديو من الرسالة...')
+            videoBuffer = await getMedia(quoted, conn)
+            fileName = 'video.mp4'
+        }
+
+        if (!videoBuffer || videoBuffer.length === 0) {
+            throw new Error('الملف فارغ أو تعذّر تحميله')
+        }
+
+        await m.reply(`📤 جاري الرفع (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)...`)
+        const cookie = await getSession()
+        const uploadedFileName = await uploadFile(videoBuffer, fileName, cookie)
+
+        await m.reply('🎙️ جاري استخراج الأصوات...')
+        const { vocal, instrumental } = await processFile(uploadedFileName, cookie)
+
+        await m.reply('🎬 جاري دمج الصوت البشري مع الفيديو...\n_قد يستغرق هذا بعض الوقت_')
+
+        const outputPath = path.join(tmpdir(), `output_${Date.now()}.mp4`)
+        await mergeAudioWithVideo(videoBuffer, vocal, outputPath)
+
+        const outputBuffer = fs.readFileSync(outputPath)
+
+        await m.reply('💾 جاري رفع الملفات...')
+        const instBuffer = await downloadUrl(instrumental)
+        let instUrl
+        try {
+            instUrl = await toCatbox(instBuffer, 'music_only.mp3')
+        } catch (_) {
+            instUrl = instrumental
+        }
+
+        await conn.sendMessage(m.chat, {
+            video: outputBuffer,
+            caption: `🎬 *تم إزالة الموسيقى من الفيديو*\n\n✅ *النتيجة:* فيديو بالصوت البشري فقط\n📦 *الحجم:* ${(outputBuffer.length / 1024 / 1024).toFixed(1)} MB`,
+            mimetype: 'video/mp4'
+        }, { quoted: m })
+
+        await conn.sendMessage(m.chat, {
+            audio: { url: instUrl },
+            mimetype: 'audio/mpeg',
+            fileName: 'music_only.mp3',
+            caption: '🎸 *الموسيقى التي تم إزالتها*'
+        }, { quoted: m })
+
+        try { fs.unlinkSync(outputPath) } catch {}
+
+        await m.reply(`✅ *تم استخراج الصوت بنجاح*`)
+        await m.react('✅')
+
+    } catch (e) {
+        console.error('Vocal Remover Error:', e)
+        await m.react('❌')
+        m.reply(`❌ *فشل الاستخراج*\n${e.message || 'خطأ غير معروف'}`)
     }
-    
-    await reply("⏳ *جاري تحضير رابط التحميل المباشر...*");
-    
-    let downloadText = `✅ *جاهز للتحميل!*\n\n`;
-    downloadText += `📥 *الخيارات المتاحة:*\n\n`;
-    downloadText += `🔸 *جودة عالية (1080p)*\n`;
-    downloadText += `[رابط التحميل الأول]\n\n`;
-    downloadText += `🔹 *جودة متوسطة (720p)*\n`;
-    downloadText += `[رابط التحميل الثاني]\n\n`;
-    downloadText += `🔺 *جودة خفيفة (480p)*\n`;
-    downloadText += `[رابط التحميل الثالث]\n\n`;
-    downloadText += `💡 _اختر الجودة المناسبة واضغط على الرابط الأزرق_\n`;
-    downloadText += `⚠️ _تأكد من وجود مساحة كافية في جهازك_`;
-    
-    return await reply(downloadText);
-  }
+}
 
-  // ===== 8. قائمة الأوامر =====
-  if (command === 'اوامر' || command === 'help' || command === 'اعدادات') {
-    let helpText = `╔════════════════════════════╗\n`;
-    helpText += `║  🤖 قائمة أوامر البوت كاملة║\n`;
-    helpText += `╚════════════════════════════╝\n\n`;
-    
-    helpText += `🎬 *أوامر الأفلام والمسلسلات:*\n`;
-    helpText += `${PREFIX}اكوام [اسم الفيلم]\n`;
-    helpText += `${PREFIX}فيلم [الاسم]\n`;
-    helpText += `${PREFIX}movie [اسم بالإنجليزية]\n\n`;
-    
-    helpText += `⚡ *أوامر الأنميات:*\n`;
-    helpText += `${PREFIX}انمي [اسم الأنمي]\n`;
-    helpText += `${PREFIX}anime [الاسم]\n\n`;
-    
-    helpText += `🖼️ *أوامر الصور:*\n`;
-    helpText += `${PREFIX}صور [الموضوع]\n`;
-    helpText += `${PREFIX}images [الموضوع]\n\n`;
-    
-    helpText += `⚽ *أوامر الرياضة:*\n`;
-    helpText += `${PREFIX}كورة [اللاعب أو الفريق]\n`;
-    helpText += `${PREFIX}رياضة [المحتوى]\n`;
-    helpText += `${PREFIX}منتخب [البلد]\n\n`;
-    
-    helpText += `🎵 *أوامر الموسيقى:*\n`;
-    helpText += `${PREFIX}موسيقى [اسم الأغنية]\n`;
-    helpText += `${PREFIX}music [الفنان]\n\n`;
-    
-    helpText += `📺 *أوامر إضافية:*\n`;
-    helpText += `${PREFIX}تفاصيل - عرض معلومات كاملة\n`;
-    helpText += `${PREFIX}تحميل - بدء التحميل\n`;
-    helpText += `${PREFIX}download - خيارات التحميل\n\n`;
-    
-    helpText += `💡 *مثال الاستخدام:*\n`;
-    helpText += `${PREFIX}اكوام Oppenheimer\n`;
-    helpText += `${PREFIX}انمي Attack on Titan\n`;
-    helpText += `${PREFIX}صور محمد صلاح`;
-    
-    return await reply(helpText);
-  }
-      }
-      
+handler.help = ['vocalremover', 'vocal']
+handler.tags = ['tools']
+handler.command = ['vocalremover', 'vocal', 'vocals', 'instrumental', 'عزل', 'موسيقى']
+handler.limit = 2
+
+export default handler
