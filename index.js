@@ -1,58 +1,74 @@
-import makeWASocket, { useMultiFileAuthState, delay } from "@whiskeysockets/baileys";
-import pino from "pino";
-import BidiJS from "bidi-js";
+import baileys from "@whiskeysockets/baileys";
+import readline from "readline";
 
-// تهيئة مكتبة إصلاح النصوص العربية
-const bidi = BidiJS();
-function fixArabicText(text) {
-    return bidi.getReorderedText(text);
-}
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    delay, 
+    DisconnectReason 
+} = baileys;
+
+const rl = readline.createInterface({ 
+    input: process.stdin, 
+    output: process.stdout 
+});
+
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 async function startBot() {
-    // تحديد مجلد حفظ الجلسة (session)
-    const { state, saveCreds } = await useMultiFileAuthState('session');
+    // تحديد مجلد حفظ جلسة تسجيل الدخول
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-    const sock = makeWASocket.default({
-        logger: pino({ level: 'silent' }),
+    const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false // إيقاف طباعة الـ QR
+        printQRInTerminal: false, // إيقاف الـ QR لاستخدام كود التحقق
+        logger: pino({ level: 'silent' })
     });
 
-    // الربط باستخدام كود التحقق (Pairing Code) في حال عدم وجود جلسة سابقة
+    // طلب كود الربط إذا لم يكن مسجلاً للدخول مسبقاً
     if (!sock.authState.creds.registered) {
-        // رقم الهاتف المرسل: 212784776925
-        const phoneNumber = "212784776925"; 
-        
-        await delay(3000); // انتظار قصير لضمان جاهزية الاتصال
-        try {
-            const code = await sock.requestPairingCode(phoneNumber);
-            console.log(`\n====================================`);
-            console.log(` كود ربط الواتساب الخاص بك هو: \x1b[32m${code}\x1b[0m`);
-            console.log(`====================================\n`);
-        } catch (error) {
-            console.error("فشل في طلب كود الربط:", error);
-        }
+        let phoneNumber = "212784776925";
+        await delay(3000); // الانتظار قليلاً لتهيئة الاتصال
+        let code = await sock.requestPairingCode(phoneNumber);
+        console.log(`\n======================================`);
+        console.log(`[*] كود ربط الواتساب الخاص بك هو: ${code}`);
+        console.log(`======================================\n`);
     }
 
-    // إدارة الأحداث والرسائل
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const msg = chatUpdate.messages;
-            if (!msg.message || msg.key.fromMe) return;
-        } catch (err) {
-            console.error(err);
+    // إدارة أحداث الاتصال
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('تم إغلاق الاتصال، جاري إعادة الاتصال...', shouldReconnect);
+            if (shouldReconnect) startBot();
+        } else if (connection === 'open') {
+            console.log('تم اتصال البوت بنجاح ومراقبة الرسائل الممتدة!');
         }
     });
 
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-        if (connection === 'close') {
-            console.log("تم إغلاق الاتصال، جاري إعادة التشغيل...");
-            startBot();
-        } else if (connection === 'open') {
-            console.log("تم اتصال البوت بنجاح!");
+    // حفظ بيانات الجلسة عند التحديث
+    sock.ev.on('creds.update', saveCreds);
+
+    // استقبال الرسائل وإعادة توجيهها للقناة
+    sock.ev.on('messages.upsert', async (m) => {
+        const msg = m.messages[0];
+        if (!msg.message || msg.key.fromMe) return;
+
+        // الحصول على نص الرسالة القادمة
+        const messageText = msg.message.conversation || 
+                            msg.message.extendedTextMessage?.text || "";
+
+        // معرف قناة الواتساب المستهدفة المستخرج من الرابط الخاص بك
+        const channelJid = "120363385750242137@newsletter"; 
+
+        if (messageText) {
+            console.log(`[رسالة جديدة]: ${messageText}`);
+            
+            // إرسال الكود أو الرسالة المستلمة مباشرة إلى قناتك
+            await sock.sendMessage(channelJid, { 
+                text: `📢 كود مستلم جديد:\n\n${messageText}` 
+            });
         }
     });
 }
