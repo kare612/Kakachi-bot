@@ -1,1 +1,6 @@
-echo '{"name": "kakachi-bot", "version": "1.0.0", "main": "index.js", "type": "commonjs"}' > package.json
+{
+  "name": "kakachi-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs"
+}
