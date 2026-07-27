@@ -1,6 +1,6 @@
-const { default: makeWASocket, useMultiFileAuthState, delay } = require("@whiskeysockets/baileys");
-const pino = require("pino");
-const BidiJS = require("bidi-js");
+import makeWASocket, { useMultiFileAuthState, delay } from "@whiskeysockets/baileys";
+import pino from "pino";
+import BidiJS from "bidi-js";
 
 // تهيئة مكتبة إصلاح النصوص العربية
 const bidi = BidiJS();
@@ -12,7 +12,7 @@ async function startBot() {
     // تحديد مجلد حفظ الجلسة (session)
     const { state, saveCreds } = await useMultiFileAuthState('session');
 
-    const sock = makeWASocket({
+    const sock = makeWASocket.default({
         logger: pino({ level: 'silent' }),
         auth: state,
         printQRInTerminal: false // إيقاف طباعة الـ QR
@@ -39,13 +39,8 @@ async function startBot() {
 
     sock.ev.on('messages.upsert', async (chatUpdate) => {
         try {
-            const msg = chatUpdate.messages[0];
+            const msg = chatUpdate.messages;
             if (!msg.message || msg.key.fromMe) return;
-
-            // مثال: إذا أرسل البوت ردًا يحتوي على نصوص عربية
-            // نقوم بتمرير النص عبر دالة fixArabicText ليظهر منسقاً
-            // await sock.sendMessage(msg.key.remoteJid, { text: fixArabicText("أهلاً بك، تم استقبال رسالتك") });
-
         } catch (err) {
             console.error(err);
         }
