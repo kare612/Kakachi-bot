@@ -1,4 +1,4 @@
-cat << 'EOF' > package.json
+
 {
   "name": "kakachi-bot",
   "version": "1.5.0",
