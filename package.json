@@ -1,8 +1,1 @@
-{
-  "name": "kakachi-bot",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.9"
-  }
-}
+sed -i '/"type": "module"/d' package.json
