@@ -1,91 +1,82 @@
-import makeWASocket, { 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    delay 
-} from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode-terminal';
 import pino from 'pino';
+import fs from 'fs';
 
-// أرقام الهواتف المدخلة بصيغة الإدخال الدولية الصحيحة (بدون علامة +)
-const botNumber = "212784776925"; 
-const developerNumber = "212715469251@s.whatsapp.net";
+// إعداد الجلسة والمجلدات الخاصة بالإضافات والأوامر
+const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+const pluginsFolder = './plugins';
+const plugins = new Map();
 
-async function startBot() {
-    // إعداد حفظ جلسة الدخول في مجلد auth_info_baileys
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false, // تعطيل ظهور الـ QR في الطرفية
-        logger: pino({ level: 'silent' }), // إخفاء سجلات الأخطاء المزعجة
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
-    });
-
-    // طلب كود التحقق في حال عدم وجود جلسة نشطة مسبقاً
-    if (!sock.authState.creds.registered) {
-        console.log(`\n[!] يتم الآن طلب كود الربط للرقم: ${botNumber}...`);
-        
-        // تأخير بسيط للتأكد من اتصال السوكيت بالخوادم
-        await delay(3000); 
-        
+// دالة فحص وتحميل ملفات الأوامر من مجلد plugins
+async function loadPlugins() {
+    if (!fs.existsSync(pluginsFolder)) fs.mkdirSync(pluginsFolder);
+    const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js'));
+    for (const file of files) {
         try {
-            const pairingCode = await sock.requestPairingCode(botNumber);
-            console.log(`\n===================================`);
-            console.log(`[*] كود الربط الخاص بك هو: ${pairingCode}`);
-            console.log(`===================================\n`);
-        } catch (error) {
-            console.error("[-] حدث خطأ أثناء طلب كود التحقق:", error);
+            const pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
+            if (pluginModule.default && pluginModule.default.name) {
+                plugins.set(pluginModule.default.name.toLowerCase(), pluginModule.default);
+                if (pluginModule.default.alias) {
+                    pluginModule.default.alias.forEach(alias => plugins.set(alias.toLowerCase(), pluginModule.default));
+                }
+            }
+        } catch (e) {
+            console.error(`❌ خطأ في ملف الإضافة ${file}:`, e);
         }
     }
+    console.log(`✅ تم تحميل ${plugins.size} أمر واختصار بنجاح.`);
+}
 
-    // الاستماع لحالة الاتصال
-    sock.ev.on('connection.update', async (update) => {
+async function startBot() {
+    await loadPlugins();
+    
+    // التحقق من طريقة تصدير الدالة لتفادي أخطاء الإصدارات المختلفة لمكتبة Baileys
+    const startSocket = typeof makeWASocket === 'function' ? makeWASocket : makeWASocket.default;
+    
+    const client = startSocket({
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: true,
+        auth: state
+    });
+
+    client.ev.on('creds.update', saveCreds);
+
+    client.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
-
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
-                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut 
-                : true;
-            
-            console.log('[-] تم قطع الاتصال. السبب:', lastDisconnect?.error, 'جاري إعادة الاتصال:', shouldReconnect);
-            if (shouldReconnect) {
-                startBot();
-            }
+            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('[+] تم تشغيل البوت والاتصال بنجاح على الواتساب!');
-            
-            // إرسال رسالة تأكيد للمطور فور نجاح الاتصال
-            try {
-                await sock.sendMessage(developerNumber, { 
-                    text: `👋 مرحباً يا مطور! البوت نشط الآن ويعمل بنجاح عبر كود التحقق.` 
-                });
-            } catch (err) {
-                console.error("[-] فشل إرسال رسالة التأكيد للمطور:", err);
-            }
+            console.log('🚀 البوت متصل الآن وجاهز تماماً للرد!');
         }
     });
 
-    // الاستماع للرسائل القادمة والرد التلقائي
-    sock.ev.on('messages.upsert', async (chatUpdate) => {
+    // معالجة الرسائل القادمة وفك المصفوفة لتمريرها إلى ملف الـ plugins
+    client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
-            const msg = chatUpdate.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
+            if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
+            const m = chatUpdate.messages[0]; // قراءة واستخراج الرسالة الأساسية الأولى من المصفوفة
+            
+            if (!m.message || m.key.fromMe) return;
 
-            const from = msg.key.remoteJid;
-            const messageText = msg.message.conversation || 
-                                msg.message.extendedTextMessage?.text || '';
+            // قراءة نص الرسالة سواء كانت نصاً عادياً أو رسالة مقتبسة/موسعة
+            const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
+            if (!body.startsWith('.')) return; // البادئة هنا هي النقطة (.)
 
-            // استجابة مخصصة إذا أرسل المطور كلمة "فحص" أو أي أمر مخصص
-            if (from === developerNumber && messageText.toLowerCase() === 'فحص') {
-                await sock.sendMessage(from, { text: '🚨 نظام البوت مستجيب ويعمل بدون مشاكل!' }, { quoted: msg });
+            const args = body.trim().split(/ +/);
+            const cmdName = args.shift().toLowerCase().slice(1); // استخراج اسم الأمر
+
+            // البحث عن الإضافة المبرمجة وتشغيلها فوراً (مثل ملف menu.js)
+            const plugin = plugins.get(cmdName);
+            if (plugin) {
+                await plugin.execute(client, m, args);
             }
         } catch (err) {
-            console.error("خطأ أثناء معالجة الرسالة المستلمة:", err);
+            console.error('خطأ أثناء معالجة الرد والاتصال بالـ plugins:', err);
         }
     });
-
-    // حفظ بيانات الجلسة عند التحديث
-    sock.ev.on('creds.update', saveCreds);
 }
 
 startBot();
