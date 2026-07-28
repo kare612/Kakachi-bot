@@ -4,8 +4,8 @@ import pino from 'pino';
 import fs from 'fs';
 
 // الثوابت الأساسية وأرقام الهواتف المحددة من قبلك
-global.developerNumber = '212715469251@s.whatsapp.net'; // رقم المطور
-const botNumber = '212784776925'; // رقم البوت الذي سيتم توليد الكود له
+global.developerNumber = 'رقمك_هنا@s.whatsapp.net'; // تم تعديل رقم المطور لرقمك
+const botNumber = 'رقمك_هنا'; // تم تعديل رقم البوت ليتم توليد الكود لرقمك أنت
 
 const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 const pluginsFolder = './plugins';
@@ -111,4 +111,3 @@ async function startBot() {
 }
 
 startBot();
-            
