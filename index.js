@@ -26,6 +26,7 @@ async function loadPlugins() {
                 pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
             }
 
+            // التعامل مع الـ Default Export في ES Modules
             const pluginData = pluginModule.default || pluginModule;
             if (pluginData && pluginData.name) {
                 plugins.set(pluginData.name.toLowerCase(), pluginData);
@@ -49,11 +50,9 @@ async function startBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false, 
         auth: state,
-        // إصدار متصفح حديث لتجنب رفض السيرفر (خطأ 428)
         browser: ["Ubuntu", "Chrome", "125.0.0.0"] 
     });
 
-    // توليد الكود الرقمي المزخرف للرقم المحدد
     if (!client.authState.creds.registered) {
         const cleanedNumber = botNumber.replace(/[^0-9]/g, '');
         
@@ -63,7 +62,6 @@ async function startBot() {
         try {
             const code = await client.requestPairingCode(cleanedNumber);
             
-            // تصميم الكود المزخرف في الـ Terminal
             console.log(`\n\x1b[35m=========================================\x1b[0m`);
             console.log(`\x1b[32m       🔑 كود الربط الرقمي الخاص بك جاهز 🔑\x1b[0m`);
             console.log(`\x1b[35m=========================================\x1b[0m`);
@@ -72,7 +70,7 @@ async function startBot() {
             console.log(`\x1b[33m👉 الطريقة:\x1b[0m افتح واتساب -> الأجهزة المرتبطة -> ربط برقم الهاتف -> واكتب الكود أعلاه.`);
             console.log(`\x1b[35m=========================================\x1b[0m\n`);
         } catch (error) {
-            console.error('❌ فشل توليد الكود الرقمي. تأكد من صحة الرقم ومستودع الحزم:', error);
+            console.error('❌ فشل توليد الكود الرقمي:', error);
         }
     }
 
@@ -91,7 +89,7 @@ async function startBot() {
         }
     });
 
-    // استقبال ومعالجة الأوامر من المجموعات، الخاص، ومن نفسك أيضاً دون حدوث تكرار (Loop)
+    // استقبال ومعالجة الأوامر من المجموعات، الخاص، ومن نفسك أيضاً
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
@@ -99,22 +97,28 @@ async function startBot() {
             const m = chatUpdate.messages[0]; 
             if (!m.message) return;
 
-            // حظر استجابة البوت للرسائل التلقائية والأزرار الصادرة منه لتفادي التعليق وحظر الحساب
-            if (m.key.fromMe && (m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.key.id?.startsWith('BAE5') || m.key.id?.length === 16)) return;
+            // تجاهل رسائل البوت الذاتية لتفادي الحلقات التكرارية (Loop) باستثناء الأوامر التجريبية
+            if (m.key.fromMe && m.key.id?.startsWith('BAE5') && m.key.id?.length === 16) return;
 
-            // قراءة النصوص من المحادثات والوسائط بشكل متوافق
-            const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
+            // طريقة محسنة وشاملة لقراءة النصوص والرسائل بجميع أنواعها (نص، صورة، منشن، إلخ)
+            const type = Object.keys(m.message)[0];
+            const body = type === 'conversation' ? m.message.conversation :
+                         type === 'extendedTextMessage' ? m.message.extendedTextMessage.text :
+                         type === 'imageMessage' ? m.message.imageMessage.caption :
+                         type === 'videoMessage' ? m.message.videoMessage.caption : '';
             
-            // التحقق من أن الرسالة تبدأ بنقطة (.) كمشغل للأوامر
+            // التحقق من أن الرسالة تبدأ بنقطة (.)
             if (!body.startsWith('.')) return;
 
             const args = body.trim().split(/ +/);
             const cmdName = args.shift().toLowerCase().slice(1);
 
-            // استدعاء وتنفيذ الأمر من مجلد plugins
+            // استدعاء وتنفيذ الأمر من الـ Map
             const plugin = plugins.get(cmdName);
             if (plugin) {
                 console.log(`\x1b[32m💬 [أمر] تم تفعيل (.${cmdName}) بواسطة: ${m.key.remoteJid}\x1b[0m`);
+                
+                // تشغيل الدالة مع تمرير المعطيات الصحيحة لبوت كاكاشي
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
@@ -124,4 +128,4 @@ async function startBot() {
 }
 
 startBot();
-                
+        
