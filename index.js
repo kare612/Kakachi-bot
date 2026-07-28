@@ -11,10 +11,10 @@ const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 const pluginsFolder = './plugins';
 const plugins = new Map();
 
-// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً (تحديث دعم النظامين معاً)
+// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً (دعم النظامين معاً)
 async function loadPlugins() {
     if (!fs.existsSync(pluginsFolder)) fs.mkdirSync(pluginsFolder);
-    // تم التعديل هنا: قراءة ملفات الـ .js والـ .cjs معاً لحل مشكلة نظام الملفات القديمة والحديثة
+    // قراءة ملفات الـ .js والـ .cjs معاً لحل مشكلة نظام الملفات القديمة والحديثة
     const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js') || file.endsWith('.cjs'));
     
     for (const file of files) {
@@ -83,13 +83,16 @@ async function startBot() {
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
+            
+            // تصحيح برمي جوهري: استخراج الكائن الأول من المصفوفة لتعمل كافة الأوامر تلقائياً
             const m = chatUpdate.messages[0]; 
             
             if (!m.message) return;
 
-            // نظام الحماية الذكي: السماح للبوت بالرد على رقم نفسه عندما تكتب بيدك، وتجاهل ردود البوت الآلية لمنع التكرار اللانهائي (Loop)
+            // نظام الحماية الذكي: يسمح للبوت بالرد على الأوامر التي تكتبها بنفسك من رقمه، ويمنع الردود الآلية للوظائف الأخرى لحظر الـ Loop
             if (m.key.fromMe && (m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.key.id?.startsWith('BAE5') || m.key.id?.length === 16)) return;
 
+            // قراءة النصوص والتعرف على الأوامر والوسائط بشكل سليم ومتوافق مع المجموعات والخاص
             const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
             if (!body.startsWith('.')) return;
 
@@ -98,7 +101,7 @@ async function startBot() {
 
             const plugin = plugins.get(cmdName);
             if (plugin) {
-                // تمرير المعاملات بشكل منظم ومتوافق مع الملفات المحدثة
+                // تمرير معاملات الرسالة والهيكل بشكل سليم 100% لكافة الإضافات
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
@@ -108,3 +111,4 @@ async function startBot() {
 }
 
 startBot();
+            
