@@ -11,17 +11,28 @@ const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 const pluginsFolder = './plugins';
 const plugins = new Map();
 
-// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً
+// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً (تحديث دعم النظامين معاً)
 async function loadPlugins() {
     if (!fs.existsSync(pluginsFolder)) fs.mkdirSync(pluginsFolder);
-    const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js'));
+    // تم التعديل هنا: قراءة ملفات الـ .js والـ .cjs معاً لحل مشكلة نظام الملفات القديمة والحديثة
+    const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js') || file.endsWith('.cjs'));
+    
     for (const file of files) {
         try {
-            const pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
-            if (pluginModule.default && pluginModule.default.name) {
-                plugins.set(pluginModule.default.name.toLowerCase(), pluginModule.default);
-                if (pluginModule.default.alias) {
-                    pluginModule.default.alias.forEach(alias => plugins.set(alias.toLowerCase(), pluginModule.default));
+            let pluginModule;
+            if (file.endsWith('.cjs')) {
+                // قراءة ملفات الكومن جي إس بنظام require التلقائي المتوافق
+                pluginModule = await import(`./plugins/${file}`);
+            } else {
+                // قراءة ملفات الإي إس موديول الحديثة بنظام الاستيراد
+                pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
+            }
+
+            const pluginData = pluginModule.default || pluginModule;
+            if (pluginData && pluginData.name) {
+                plugins.set(pluginData.name.toLowerCase(), pluginData);
+                if (pluginData.alias) {
+                    pluginData.alias.forEach(alias => plugins.set(alias.toLowerCase(), pluginData));
                 }
             }
         } catch (e) {
@@ -74,10 +85,12 @@ async function startBot() {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
             const m = chatUpdate.messages[0]; 
             
-            // التعديل هنا: تم حذف شرط m.key.fromMe لكي يستجيب البوت لنفسه
             if (!m.message) return;
 
-            const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
+            // نظام الحماية الذكي: السماح للبوت بالرد على رقم نفسه عندما تكتب بيدك، وتجاهل ردود البوت الآلية لمنع التكرار اللانهائي (Loop)
+            if (m.key.fromMe && (m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.key.id?.startsWith('BAE5') || m.key.id?.length === 16)) return;
+
+            const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
             if (!body.startsWith('.')) return;
 
             const args = body.trim().split(/ +/);
@@ -85,6 +98,7 @@ async function startBot() {
 
             const plugin = plugins.get(cmdName);
             if (plugin) {
+                // تمرير المعاملات بشكل منظم ومتوافق مع الملفات المحدثة
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
