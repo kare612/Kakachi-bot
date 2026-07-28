@@ -3,28 +3,26 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
 
-// الثوابت الأساسية وأرقام الهواتف المحددة من قبلك
-global.developerNumber = 'رقمك_هنا@s.whatsapp.net'; // تم تعديل رقم المطور لرقمك
-const botNumber = 'رقمك_هنا'; // تم تعديل رقم البوت ليتم توليد الكود لرقمك أنت
+// ضع رقمك هنا مباشرة (بدون علامة + أو مسافات، مثال: 9665XXXXXXXX)
+const botNumber = 'ضع_رقمك_هنا_بدون_علامة_زائد'; 
+
+global.developerNumber = `${botNumber}@s.whatsapp.net`;
 
 const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 const pluginsFolder = './plugins';
 const plugins = new Map();
 
-// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً (دعم النظامين معاً)
+// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً
 async function loadPlugins() {
     if (!fs.existsSync(pluginsFolder)) fs.mkdirSync(pluginsFolder);
-    // قراءة ملفات الـ .js والـ .cjs معاً لحل مشكلة نظام الملفات القديمة والحديثة
     const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js') || file.endsWith('.cjs'));
     
     for (const file of files) {
         try {
             let pluginModule;
             if (file.endsWith('.cjs')) {
-                // قراءة ملفات الكومن جي إس بنظام require التلقائي المتوافق
                 pluginModule = await import(`./plugins/${file}`);
             } else {
-                // قراءة ملفات الإي إس موديول الحديثة بنظام الاستيراد
                 pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
             }
 
@@ -39,7 +37,7 @@ async function loadPlugins() {
             console.error(`❌ خطأ في ملف الإضافة ${file}:`, e);
         }
     }
-    console.log(`✅ تم تحميل ${plugins.size} أمر واختصار من مجلد الإضافات بنجاح.`);
+    console.log(`\x1b[36m⚙️ [النظام] تم تحميل ${plugins.size} أمر واختصار من مجلد الإضافات بنجاح.\x1b[0m`);
 }
 
 async function startBot() {
@@ -49,21 +47,33 @@ async function startBot() {
     
     const client = startSocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // تعطيل الـ QR كلياً بناءً على طلبك
+        printQRInTerminal: false, // معطل بناءً على طلبك للاعتماد على الكود الرقمي
         auth: state,
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        // تحديث إصدار المتصفح لإصدار حديث (حل مشكلة خطأ 428)
+        browser: ["Ubuntu", "Chrome", "125.0.0.0"] 
     });
 
-    // توليد الكود الرقمي (Pairing Code) بدلاً من الـ QR
+    // تنظيف رقم الهاتف وتوليد الكود الرقمي المزخرف
     if (!client.authState.creds.registered) {
-        console.log(`\n⏳ جاري طلب الكود الرقمي لرقم البوت: ${botNumber}...`);
-        await delay(3000); 
+        // تنظيف الرقم من أي رموز أو مسافات أو علامة + ليقبله السيرفر فوراً
+        const cleanedNumber = botNumber.replace(/[^0-9]/g, '');
+        
+        console.log(`\n\x1b[33m⏳ [جاري الاتصال] جاري طلب الكود الرقمي للرقم: ${cleanedNumber}...\x1b[0m`);
+        await delay(6000); // زيادة وقت الانتظار لضمان استقرار الاتصال قبل الطلب
+        
         try {
-            const code = await client.requestPairingCode(botNumber);
-            console.log(`\n🔑 كود الربط الرقمي الخاص بك هو: \x1b[32m${code}\x1b[0m`);
-            console.log(`👉 افتح واتساب البوت -> الأجهزة المرتبطة -> ربط برقم الهاتف -> واكتب الكود أعلاه.\n`);
+            const code = await client.requestPairingCode(cleanedNumber);
+            
+            // زخرفة وتنسيق ظهور كود الربط في الواجهة
+            console.log(`\n\x1b[35m=========================================\x1b[0m`);
+            console.log(`\x1b[32m       🔑 كود الربط الرقمي الخاص بك جاهز 🔑\x1b[0m`);
+            console.log(`\x1b[35m=========================================\x1b[0m`);
+            console.log(`\n              \x1b[1;42;37m  ${code}  \x1b[0m\n`);
+            console.log(`\x1b[35m=========================================\x1b[0m`);
+            console.log(`\x1b[33m👉 الطريقة:\x1b[0m افتح واتساب -> الأجهزة المرتبطة -> ربط برقم الهاتف -> واكتب الكود أعلاه.`);
+            console.log(`\x1b[35m=========================================\x1b[0m\n`);
         } catch (error) {
-            console.error('❌ فشل توليد الكود الرقمي، تأكد من صحة رقم البوت المكتوب:', error);
+            console.error('❌ فشل توليد الكود الرقمي. تأكد من تحديث حزمة Baileys ومن صحة الرقم المكتوب:', error);
         }
     }
 
@@ -73,41 +83,44 @@ async function startBot() {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) startBot();
+            if (shouldReconnect) {
+                console.log('\x1b[31m🔄 انقطع الاتصال، جاري إعادة المحاولة...\x1b[0m');
+                startBot();
+            }
         } else if (connection === 'open') {
-            console.log('🚀 تم الاتصال بنجاح! بوت كاكاشي متصل بالواتساب وجاهز للرد على الإضافات.');
+            console.log('\n\x1b[32m🚀 [نجاح] تم الاتصال بنجاح! بوت كاكاشي متصل بالواتساب وجاهز للرد على الإضافات.\x1b[0m\n');
         }
     });
 
-    // معالجة الرسائل والرد باستخدام ملفات الإضافات (مثل ملف menu.js)
+    // معالجة الرسائل والرد واستقبال الأوامر
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
             
-            // تصحيح برمي جوهري: استخراج الكائن الأول من المصفوفة لتعمل كافة الأوامر تلقائياً
             const m = chatUpdate.messages[0]; 
-            
             if (!m.message) return;
 
-            // نظام الحماية الذكي: يسمح للبوت بالرد على الأوامر التي تكتبها بنفسك من رقمه، ويمنع الردود الآلية للوظائف الأخرى لحظر الـ Loop
-            if (m.key.fromMe && (m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.key.id?.startsWith('BAE5') || m.key.id?.length === 16)) return;
-
-            // قراءة النصوص والتعرف على الأوامر والوسائط بشكل سليم ومتوافق مع المجموعات والخاص
+            // استخراج نص الرسالة بشكل كامل وصحيح
             const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
+            
+            // التحقق من أن الرسالة تبدأ بنقطة كمشغل للأوامر (.)
             if (!body.startsWith('.')) return;
 
+            // فصل الأمر عن الكلمات المصاحبة (Arguments)
             const args = body.trim().split(/ +/);
             const cmdName = args.shift().toLowerCase().slice(1);
 
+            // البحث عن الأمر داخل مجلد الإضافات المحملة لتنفيذه
             const plugin = plugins.get(cmdName);
             if (plugin) {
-                // تمرير معاملات الرسالة والهيكل بشكل سليم 100% لكافة الإضافات
+                console.log(`\x1b[32m💬 [أمر] تم تفعيل الأمر (.${cmdName}) بواسطة: ${m.key.remoteJid}\x1b[0m`);
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
-            console.error('خطأ أثناء معالجة رسالة الرد:', err);
+            console.error('❌ خطأ أثناء معالجة رسالة الرد:', err);
         }
     });
 }
 
 startBot();
+        
