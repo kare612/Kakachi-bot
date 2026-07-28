@@ -1,12 +1,12 @@
 // إضافة ميزة تحميل وتشغيل الفيديوهات داخل ملف الإضافات
-module.exports = {
+export default {
     name: 'فيديو',
     alias: ['video', 'تحميل'],
     category: 'downloader',
     desc: 'تحميل وتشغيل الفيديوهات من الروابط مباشرة',
-    async execute(client, m, { args }) {
+    async execute(client, m, args) { // تم تصحيح الباراميترز لتتوافق مع ملف index.js الخاص بك
         // 1. التحقق من أن المستخدم أرسل رابطاً
-        if (!args[0]) {
+        if (!args || !args[0]) {
             return await client.sendMessage(m.chat, { text: '⚠️ يرجى إدخال رابط الفيديو بعد الأمر. مثال:\n.فيديو [رابط الفيديو]' }, { quoted: m });
         }
 
@@ -30,4 +30,3 @@ module.exports = {
         }
     }
 };
-                                     
