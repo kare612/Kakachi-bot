@@ -3,8 +3,8 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
 
-// ضع رقمك هنا مباشرة (بدون علامة + أو مسافات، مثال: 9665XXXXXXXX)
-const botNumber = 'ضع_رقمك_هنا_بدون_علامة_زائد'; 
+// رقم البوت الخاص بك تم إدراجة مباشرة لتوليد الكود له بشكل سليم
+const botNumber = '212784776925'; 
 
 global.developerNumber = `${botNumber}@s.whatsapp.net`;
 
@@ -47,24 +47,23 @@ async function startBot() {
     
     const client = startSocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // معطل بناءً على طلبك للاعتماد على الكود الرقمي
+        printQRInTerminal: false, 
         auth: state,
-        // تحديث إصدار المتصفح لإصدار حديث (حل مشكلة خطأ 428)
+        // إصدار متصفح حديث لتجنب رفض السيرفر (خطأ 428)
         browser: ["Ubuntu", "Chrome", "125.0.0.0"] 
     });
 
-    // تنظيف رقم الهاتف وتوليد الكود الرقمي المزخرف
+    // توليد الكود الرقمي المزخرف للرقم المحدد
     if (!client.authState.creds.registered) {
-        // تنظيف الرقم من أي رموز أو مسافات أو علامة + ليقبله السيرفر فوراً
         const cleanedNumber = botNumber.replace(/[^0-9]/g, '');
         
         console.log(`\n\x1b[33m⏳ [جاري الاتصال] جاري طلب الكود الرقمي للرقم: ${cleanedNumber}...\x1b[0m`);
-        await delay(6000); // زيادة وقت الانتظار لضمان استقرار الاتصال قبل الطلب
+        await delay(6000); 
         
         try {
             const code = await client.requestPairingCode(cleanedNumber);
             
-            // زخرفة وتنسيق ظهور كود الربط في الواجهة
+            // تصميم الكود المزخرف في الـ Terminal
             console.log(`\n\x1b[35m=========================================\x1b[0m`);
             console.log(`\x1b[32m       🔑 كود الربط الرقمي الخاص بك جاهز 🔑\x1b[0m`);
             console.log(`\x1b[35m=========================================\x1b[0m`);
@@ -73,7 +72,7 @@ async function startBot() {
             console.log(`\x1b[33m👉 الطريقة:\x1b[0m افتح واتساب -> الأجهزة المرتبطة -> ربط برقم الهاتف -> واكتب الكود أعلاه.`);
             console.log(`\x1b[35m=========================================\x1b[0m\n`);
         } catch (error) {
-            console.error('❌ فشل توليد الكود الرقمي. تأكد من تحديث حزمة Baileys ومن صحة الرقم المكتوب:', error);
+            console.error('❌ فشل توليد الكود الرقمي. تأكد من صحة الرقم ومستودع الحزم:', error);
         }
     }
 
@@ -92,7 +91,7 @@ async function startBot() {
         }
     });
 
-    // معالجة الرسائل والرد واستقبال الأوامر
+    // استقبال ومعالجة الأوامر من المجموعات، الخاص، ومن نفسك أيضاً دون حدوث تكرار (Loop)
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
@@ -100,20 +99,22 @@ async function startBot() {
             const m = chatUpdate.messages[0]; 
             if (!m.message) return;
 
-            // استخراج نص الرسالة بشكل كامل وصحيح
+            // حظر استجابة البوت للرسائل التلقائية والأزرار الصادرة منه لتفادي التعليق وحظر الحساب
+            if (m.key.fromMe && (m.message.buttonsResponseMessage || m.message.templateButtonReplyMessage || m.message.listResponseMessage || m.key.id?.startsWith('BAE5') || m.key.id?.length === 16)) return;
+
+            // قراءة النصوص من المحادثات والوسائط بشكل متوافق
             const body = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || '';
             
-            // التحقق من أن الرسالة تبدأ بنقطة كمشغل للأوامر (.)
+            // التحقق من أن الرسالة تبدأ بنقطة (.) كمشغل للأوامر
             if (!body.startsWith('.')) return;
 
-            // فصل الأمر عن الكلمات المصاحبة (Arguments)
             const args = body.trim().split(/ +/);
             const cmdName = args.shift().toLowerCase().slice(1);
 
-            // البحث عن الأمر داخل مجلد الإضافات المحملة لتنفيذه
+            // استدعاء وتنفيذ الأمر من مجلد plugins
             const plugin = plugins.get(cmdName);
             if (plugin) {
-                console.log(`\x1b[32m💬 [أمر] تم تفعيل الأمر (.${cmdName}) بواسطة: ${m.key.remoteJid}\x1b[0m`);
+                console.log(`\x1b[32m💬 [أمر] تم تفعيل (.${cmdName}) بواسطة: ${m.key.remoteJid}\x1b[0m`);
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
@@ -123,4 +124,4 @@ async function startBot() {
 }
 
 startBot();
-        
+                
