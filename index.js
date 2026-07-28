@@ -1,76 +1,91 @@
-import baileys from "@whiskeysockets/baileys";
-import readline from "readline";
-
-const { 
-    default: makeWASocket, 
+import makeWASocket, { 
     useMultiFileAuthState, 
-    delay, 
-    DisconnectReason 
-} = baileys;
+    DisconnectReason, 
+    delay 
+} from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
+import pino from 'pino';
 
-const rl = readline.createInterface({ 
-    input: process.stdin, 
-    output: process.stdout 
-});
-
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+// أرقام الهواتف المدخلة بصيغة الإدخال الدولية الصحيحة (بدون علامة +)
+const botNumber = "212784776925"; 
+const developerNumber = "212715469251@s.whatsapp.net";
 
 async function startBot() {
-    // تحديد مجلد حفظ جلسة تسجيل الدخول
+    // إعداد حفظ جلسة الدخول في مجلد auth_info_baileys
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // إيقاف الـ QR لاستخدام كود التحقق
-        logger: pino({ level: 'silent' })
+        printQRInTerminal: false, // تعطيل ظهور الـ QR في الطرفية
+        logger: pino({ level: 'silent' }), // إخفاء سجلات الأخطاء المزعجة
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // طلب كود الربط إذا لم يكن مسجلاً للدخول مسبقاً
+    // طلب كود التحقق في حال عدم وجود جلسة نشطة مسبقاً
     if (!sock.authState.creds.registered) {
-        let phoneNumber = "212784776925";
-        await delay(3000); // الانتظار قليلاً لتهيئة الاتصال
-        let code = await sock.requestPairingCode(phoneNumber);
-        console.log(`\n======================================`);
-        console.log(`[*] كود ربط الواتساب الخاص بك هو: ${code}`);
-        console.log(`======================================\n`);
+        console.log(`\n[!] يتم الآن طلب كود الربط للرقم: ${botNumber}...`);
+        
+        // تأخير بسيط للتأكد من اتصال السوكيت بالخوادم
+        await delay(3000); 
+        
+        try {
+            const pairingCode = await sock.requestPairingCode(botNumber);
+            console.log(`\n===================================`);
+            console.log(`[*] كود الربط الخاص بك هو: ${pairingCode}`);
+            console.log(`===================================\n`);
+        } catch (error) {
+            console.error("[-] حدث خطأ أثناء طلب كود التحقق:", error);
+        }
     }
 
-    // إدارة أحداث الاتصال
+    // الاستماع لحالة الاتصال
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('تم إغلاق الاتصال، جاري إعادة الاتصال...', shouldReconnect);
-            if (shouldReconnect) startBot();
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
+                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut 
+                : true;
+            
+            console.log('[-] تم قطع الاتصال. السبب:', lastDisconnect?.error, 'جاري إعادة الاتصال:', shouldReconnect);
+            if (shouldReconnect) {
+                startBot();
+            }
         } else if (connection === 'open') {
-            console.log('تم اتصال البوت بنجاح ومراقبة الرسائل الممتدة!');
+            console.log('[+] تم تشغيل البوت والاتصال بنجاح على الواتساب!');
+            
+            // إرسال رسالة تأكيد للمطور فور نجاح الاتصال
+            try {
+                await sock.sendMessage(developerNumber, { 
+                    text: `👋 مرحباً يا مطور! البوت نشط الآن ويعمل بنجاح عبر كود التحقق.` 
+                });
+            } catch (err) {
+                console.error("[-] فشل إرسال رسالة التأكيد للمطور:", err);
+            }
+        }
+    });
+
+    // الاستماع للرسائل القادمة والرد التلقائي
+    sock.ev.on('messages.upsert', async (chatUpdate) => {
+        try {
+            const msg = chatUpdate.messages[0];
+            if (!msg.message || msg.key.fromMe) return;
+
+            const from = msg.key.remoteJid;
+            const messageText = msg.message.conversation || 
+                                msg.message.extendedTextMessage?.text || '';
+
+            // استجابة مخصصة إذا أرسل المطور كلمة "فحص" أو أي أمر مخصص
+            if (from === developerNumber && messageText.toLowerCase() === 'فحص') {
+                await sock.sendMessage(from, { text: '🚨 نظام البوت مستجيب ويعمل بدون مشاكل!' }, { quoted: msg });
+            }
+        } catch (err) {
+            console.error("خطأ أثناء معالجة الرسالة المستلمة:", err);
         }
     });
 
     // حفظ بيانات الجلسة عند التحديث
     sock.ev.on('creds.update', saveCreds);
-
-    // استقبال الرسائل وإعادة توجيهها للقناة
-    sock.ev.on('messages.upsert', async (m) => {
-        const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
-
-        // الحصول على نص الرسالة القادمة
-        const messageText = msg.message.conversation || 
-                            msg.message.extendedTextMessage?.text || "";
-
-        // معرف قناة الواتساب المستهدفة المستخرج من الرابط الخاص بك
-        const channelJid = "120363385750242137@newsletter"; 
-
-        if (messageText) {
-            console.log(`[رسالة جديدة]: ${messageText}`);
-            
-            // إرسال الكود أو الرسالة المستلمة مباشرة إلى قناتك
-            await sock.sendMessage(channelJid, { 
-                text: `📢 كود مستلم جديد:\n\n${messageText}` 
-            });
-        }
-    });
 }
 
 startBot();
