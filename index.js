@@ -69,6 +69,5 @@ const loadCommands = async () => {
 // تشغيل دالة تحميل الأوامر
 await loadCommands();
 
-// ضع توكن البوت الخاص بك هنا لتشغيله
-client.login('YOUR_BOT_TOKEN_HERE');
-            
+// تم وضع الرمز الخاص بك هنا في سطر التشغيل
+client.login('212784776925');
