@@ -3,16 +3,15 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
 
-// رقم البوت الخاص بك تم إدراجة مباشرة لتوليد الكود له بشكل سليم
+// رقم البوت الخاص بك
 const botNumber = '212784776925'; 
-
 global.developerNumber = `${botNumber}@s.whatsapp.net`;
 
 const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 const pluginsFolder = './plugins';
 const plugins = new Map();
 
-// دالة فحص وتحميل ملفات الأوامر من مجلد plugins تلقائياً
+// دالة فحص وتحميل ملفات الأوامر
 async function loadPlugins() {
     if (!fs.existsSync(pluginsFolder)) fs.mkdirSync(pluginsFolder);
     const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js') || file.endsWith('.cjs'));
@@ -26,7 +25,6 @@ async function loadPlugins() {
                 pluginModule = await import(`./plugins/${file}?update=${Date.now()}`);
             }
 
-            // التعامل مع الـ Default Export في ES Modules
             const pluginData = pluginModule.default || pluginModule;
             if (pluginData && pluginData.name) {
                 plugins.set(pluginData.name.toLowerCase(), pluginData);
@@ -38,8 +36,11 @@ async function loadPlugins() {
             console.error(`❌ خطأ في ملف الإضافة ${file}:`, e);
         }
     }
-    console.log(`\x1b[36m⚙️ [النظام] تم تحميل ${plugins.size} أمر واختصار من مجلد الإضافات بنجاح.\x1b[0m`);
+    console.log(`\x1b[36m⚙️ [النظام] تم تحميل ${plugins.size} أمر من مجلد الإضافات بنجاح.\x1b[0m`);
 }
+
+// متغير لمنع تكرار طلب الكود الرقمي
+let isPairingCodeRequested = false;
 
 async function startBot() {
     await loadPlugins();
@@ -53,7 +54,9 @@ async function startBot() {
         browser: ["Ubuntu", "Chrome", "125.0.0.0"] 
     });
 
-    if (!client.authState.creds.registered) {
+    // توليد الكود الرقمي لمرة واحدة فقط دون تكرار
+    if (!client.authState.creds.registered && !isPairingCodeRequested) {
+        isPairingCodeRequested = true; // تفعيل الحماية لمنع التكرار
         const cleanedNumber = botNumber.replace(/[^0-9]/g, '');
         
         console.log(`\n\x1b[33m⏳ [جاري الاتصال] جاري طلب الكود الرقمي للرقم: ${cleanedNumber}...\x1b[0m`);
@@ -71,25 +74,33 @@ async function startBot() {
             console.log(`\x1b[35m=========================================\x1b[0m\n`);
         } catch (error) {
             console.error('❌ فشل توليد الكود الرقمي:', error);
+            isPairingCodeRequested = false; // إعادة التعيين في حال فشل السيرفر ليتيح المحاولة لاحقاً
         }
     }
 
     client.ev.on('creds.update', saveCreds);
 
-    client.ev.on('connection.update', (update) => {
+    client.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
+            const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+            
+            // إذا كان سبب الفصل هو انتهاء الجلسة أو تسجيل الخروج، نقوم بإعادة تعيين المتغير لطلب كود جديد
+            if (reason === DisconnectReason.loggedOut) {
+                console.log('\x1b[31m❌ تم تسجيل الخروج من الجهاز، يرجى حذف مجلد الجلسة وإعادة المحاولة.\x1b[0m');
+                isPairingCodeRequested = false;
+            } else {
                 console.log('\x1b[31m🔄 انقطع الاتصال، جاري إعادة المحاولة...\x1b[0m');
+                await delay(5000); // وقت انتظار مستقر قبل إعادة التشغيل لتجنب الحلقات التكرارية
                 startBot();
             }
         } else if (connection === 'open') {
-            console.log('\n\x1b[32m🚀 [نجاح] تم الاتصال بنجاح! بوت كاكاشي متصل بالواتساب وجاهز للرد على الإضافات.\x1b[0m\n');
+            console.log('\n\x1b[32m🚀 [نجاح] تم الاتصال بنجاح! بوت كاكاشي جاهز للعمل.\x1b[0m\n');
+            isPairingCodeRequested = false; // تصفير الحالة بعد النجاح
         }
     });
 
-    // استقبال ومعالجة الأوامر من المجموعات، الخاص، ومن نفسك أيضاً
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
@@ -97,28 +108,22 @@ async function startBot() {
             const m = chatUpdate.messages[0]; 
             if (!m.message) return;
 
-            // تجاهل رسائل البوت الذاتية لتفادي الحلقات التكرارية (Loop) باستثناء الأوامر التجريبية
             if (m.key.fromMe && m.key.id?.startsWith('BAE5') && m.key.id?.length === 16) return;
 
-            // طريقة محسنة وشاملة لقراءة النصوص والرسائل بجميع أنواعها (نص، صورة، منشن، إلخ)
             const type = Object.keys(m.message)[0];
             const body = type === 'conversation' ? m.message.conversation :
                          type === 'extendedTextMessage' ? m.message.extendedTextMessage.text :
                          type === 'imageMessage' ? m.message.imageMessage.caption :
                          type === 'videoMessage' ? m.message.videoMessage.caption : '';
             
-            // التحقق من أن الرسالة تبدأ بنقطة (.)
             if (!body.startsWith('.')) return;
 
             const args = body.trim().split(/ +/);
             const cmdName = args.shift().toLowerCase().slice(1);
 
-            // استدعاء وتنفيذ الأمر من الـ Map
             const plugin = plugins.get(cmdName);
             if (plugin) {
                 console.log(`\x1b[32m💬 [أمر] تم تفعيل (.${cmdName}) بواسطة: ${m.key.remoteJid}\x1b[0m`);
-                
-                // تشغيل الدالة مع تمرير المعطيات الصحيحة لبوت كاكاشي
                 await plugin.execute(client, m, args);
             }
         } catch (err) {
@@ -128,4 +133,3 @@ async function startBot() {
 }
 
 startBot();
-        
