@@ -1,5 +1,3 @@
-import fs from 'fs';
-
 export default {
   name: 'الاوامر',
   alias: ['أوامر', 'اوامر', 'قائمة', 'menu', 'help'],
@@ -7,51 +5,68 @@ export default {
   desc: 'عرض اللوحة البرمجية وكافة الأوامر المضافة للبوت',
   async execute(client, m, args) {
     try {
-      const messageObj = m.message ? m : (Array.isArray(m) ? m[0] : m);
-      if (!messageObj) return;
+      // التحقق لجلب البيانات بشكل صحيح دون كراش
+      const msg = m && m.message ? m : (Array.isArray(m) && m[0] ? m[0] : null);
+      if (!msg) return;
 
-      const chatId = m.chat || messageObj.key.remoteJid;
-      // جلب رقم المستخدم بطريقة آمنة متوافقة مع Baileys
-      const sender = messageObj.key.participant || messageObj.participant || chatId;
-      const userId = sender.includes(':') ? sender.split(':')[0] + '@s.whatsapp.net' : sender;
+      const chatId = msg.key.remoteJid;
+      const sender = msg.key.participant || msg.participant || chatId;
       
-      const userLevel = global.db?.users?.[userId]?.level || 1;
-      const userMoney = global.db?.users?.[userId]?.money || 0;
+      // تنظيف رقم المستخدم من صيغة الأجهزة المتعددة المتداخلة (:1) لضمان عمل المنشن
+      const userId = sender.includes(':') ? sender.split(':')[0] + '@s.whatsapp.net' : sender;
       const devNumber = '212715469251@s.whatsapp.net';
 
-      const menuImageUrl = 'https://ibb.co';
+      // رابط الصورة الجديد والمباشر الشغال بنسبة 100%
+      const menuImageUrl = 'https://i.ibb.co/fY2TYcQS/52216.jpg';
 
+      // نص قائمة الأوامر المزخرفة والمستفة تحت بعضها بدقة
       const fullMenu = `╔═══𓆩 *𝑲𝑨𝑲𝑨𝑺𝑯𝑰 𓂆 𝑩𝑶𝑻* 𓆪═══╗\n` +
                        `║  ⚡ *لوحـة تحكـم الأوامـر المطـورة* ⚡\n` +
                        `╚════════════════════╝\n\n` +
                        `👤 *الـلاعـب:* @${userId.split('@')[0]}\n` +
-                       `🏅 *المستـوى:* 『 ${userLevel} 』\n` +
-                       `💰 *الرصـيد:* 『 $${userMoney} 』\n` +
                        `👑 *المطـور:* @${devNumber.split('@')[0]}\n` +
                        `🗓️ *التـاريخ:* ${new Date().toLocaleDateString('ar-EG')}\n` +
+                       `🌐 *البادئـة:* [ . ]\n` +
                        `───────────────────\n\n` +
+                       
                        `🎬 ┃ *قسـم الميديـا والتنزيلات* 🎬\n` +
+                       `── 𓆩 *𝗏𝗂𝖽𝖾𝗈.𝗃𝗌* 𓆪 ──\n` +
                        `• 🔘 ┋ *.فيديو* ↫ تحميل وفك تشفير الفيديوهات.\n\n` +
+                       
                        `🎮 ┃ *قسـم الألعاب التفاعليـة* 🎮\n` +
+                       `── 𓆩 *𝗀𝖺𝗆𝖾𝗌.𝗃𝗌* 𓆪 ──\n` +
                        `• 🔘 ┋ *.العاب* ↫ فتح لوحة الألعاب الشاملة.\n` +
                        `• 🔘 ┋ *.العاب زواج* ↫ زواج عشوائي للأعضاء بالصور.\n` +
                        `• 🔘 ┋ *.العاب خمن* ↫ بدء تحدي تخمين الصور الذكي.\n\n` +
+                       
                        `⚔️ ┃ *قسـم النقابات والإدارة* ⚔️\n` +
+                       `── 𓆩 *𝗀𝗎鏈𝗅𝖽𝗌.𝗃𝗌* 𓆪 ──\n` +
                        `• 🔘 ┋ *.نقابة* ↫ عرض اللوحة الإدارية للنقابة.\n` +
-                       `• 🔘 ┋ *.نقابة إنشاء* ↫ تأسيس نقابة مقاتلين جديدة.\n\n` +
+                       `• 🔘 ┋ *.نقابة إنشاء* ↫ تأسيس نقابة مقاتلين جديدة.\n` +
+                       `• 🔘 ┋ *.نقابة انضمام* ↫ تقديم طلب دخول لنقابة قائمة.\n` +
+                       `• 🔘 ┋ *.نقابة تأكيد* ↫ تفعيل البوت بعد الاشتراك.\n\n` +
+                       
+                       `📊 ┃ *قسـم بنك الأرقام والترتيب* 📊\n` +
+                       `── 𓆩 *𝗀𝖺𝗆𝖾𝗌_𝖽𝗏.𝗃𝗌* 𓆪 ──\n` +
+                       `• 🔘 ┋ *.أرقام* ↫ كشف الحساب الشخصي والمستويات.\n` +
+                       `• 🔘 ┋ *.أرقام ترتيب* ↫ عرض توب 5 لأغنياء السيرفر.\n` +
+                       `• 🔘 ┋ *.أرقام هدايا* ↫ استلام الراتب اليومي للألعاب.\n\n` +
+                       
                        `📦 ┃ *قسـم متجر التطبيقات* 📦\n` +
+                       `── 𓆩 *𝖺𝗉𝗄.𝗃𝗌* 𓆪 ──\n` +
                        `• 🔘 ┋ *.تطبيق* ↫ استخراج وتحميل ملفات الأندرويد APK.\n\n` +
                        `───────────────────\n` +
                        `💡 _ضع نقطة (.) قبل الأمر لتشغيله البرمجي السليم._`;
 
+      // إرسال الصورة مدمجة مع النص وعمل منشن للمستخدم والمطور
       await client.sendMessage(chatId, { 
         image: { url: menuImageUrl },
         caption: fullMenu,
         mentions: [userId, devNumber]
-      }, { quoted: messageObj });
+      }, { quoted: msg });
 
     } catch (error) {
-      console.error("❌ خطأ أثناء تنفيذ أمر القائمة:", error);
+      console.error("❌ خطأ أثناء تنفيذ أمر القائمة بالصورة الجديدة:", error);
     }
   }
 };
