@@ -1,12 +1,16 @@
 // كود ميزة البحث وتحميل تطبيقات الأندرويد (APK) لبوت كاكاشي
-const axios = require('axios');
+import axios from 'axios';
 
-module.exports = {
+export default {
     name: 'تطبيق',
     alias: ['برنامج', 'لعبه', 'apk', 'تحميل_تطبيق'],
     category: 'downloader',
     desc: 'البحث عن تطبيقات وألعاب الأندرويد وتحميلها مباشرة كملف APK',
-    async execute(client, m, { text, args }) {
+    async execute(client, m, args) { // تم تصحيح الباراميترز لتتوافق مع ملف index.js الخاص بك
+        
+        // استخراج النص الكامل من مصفوفة الـ args الممررة من الملف الرئيسي
+        const text = args ? args.join(' ') : '';
+
         // 1. التحقق من كتابة اسم التطبيق
         if (!text) {
             return await client.sendMessage(m.chat, { 
@@ -76,4 +80,3 @@ module.exports = {
         }
     }
 };
-              
