@@ -1,15 +1,18 @@
-// كود إضافة تحميل وتشغيل الفيديوهات لبوت كاكاشي
-const axios = require('axios');
+// كود إضافة تحميل وتشغيل الفيديوهات لبوت كاكاشي (نسخة ES Modules المحدثة)
+import axios from 'axios';
 
-module.exports = {
+export default {
     name: 'فيديو',
     alias: ['video', 'تحميل_فيديو', 'vd'],
     category: 'downloader',
     desc: 'تحميل وتشغيل الفيديوهات من الروابط مباشرة',
-    async execute(client, m, { text, args }) {
+    async execute(client, m, args) {
+        // تحويل المصفوفة args إلى نص للتعامل مع الرابط المكتوب
+        const text = args.join(' ');
+
         // 1. التأكد من أن المستخدم أرسل رابطاً
         if (!text) {
-            return await client.sendMessage(m.chat, { 
+            return await client.sendMessage(m.key.remoteJid, { 
                 text: '⚠️ يرجى إدخال رابط الفيديو بعد الأمر.\nمثال:\n.فيديو https://tiktok.com...' 
             }, { quoted: m });
         }
@@ -18,20 +21,18 @@ module.exports = {
 
         try {
             // 2. إرسال رسالة تفيد ببدء المعالجة
-            await client.sendMessage(m.chat, { text: '⏳ جاري تشغيل ومعالجة الفيديو، يرجى الانتظار...' }, { quoted: m });
+            await client.sendMessage(m.key.remoteJid, { text: '⏳ جاري تشغيل ومعالجة الفيديو، يرجى الانتظار...' }, { quoted: m });
 
-            // 3. جلب الفيديو وتحميله باستخدام واجهة برمجة (API) مجانية للتحميل
-            // نستخدم هنا API عام ومستقر لتحويل ميديا التيك توك والمنصات الأخرى إلى روابط مباشرة
-            const response = await axios.get(`https://eu.org{encodeURIComponent(videoUrl)}&apikey=XYZ`);
+            // 3. جلب الفيديو وتحميله باستخدام واجهة برمجة (API)
+            const response = await axios.get(`https://eu.org{encodeURIComponent(videoUrl)}&apikey=XYZ`).catch(() => null);
             
-            // ملاحظة: يمكنك استبدال الرابط أعلاه بأي موقع API تحميل تفضله أو إرسال الرابط مباشرة إذا كان رابطاً ينتهي بـ .mp4
             let finalVideoUrl = videoUrl;
-            if (response.data && response.data.result && response.data.result.video) {
+            if (response && response.data && response.data.result && response.data.result.video) {
                 finalVideoUrl = response.data.result.video; // الرابط المباشر المستخرج
             }
 
             // 4. إرسال الفيديو مباشرة إلى شات الواتساب
-            await client.sendMessage(m.chat, {
+            await client.sendMessage(m.key.remoteJid, {
                 video: { url: finalVideoUrl },
                 caption: '🎬 تم تشغيل وتحميل الفيديو بنجاح بواسطة بوت كاكاشي!',
                 mimetype: 'video/mp4',
@@ -43,13 +44,13 @@ module.exports = {
             
             // محاولة بديلة: إرسال الرابط المباشر مباشرة للواتساب في حال كان الرابط المدخل مباشراً أصلاً
             try {
-                await client.sendMessage(m.chat, {
+                await client.sendMessage(m.key.remoteJid, {
                     video: { url: videoUrl },
                     caption: '🎬 تم التشغيل (محاولة مباشرة)',
                     mimetype: 'video/mp4'
                 }, { quoted: m });
             } catch (fallbackError) {
-                await client.sendMessage(m.chat, { 
+                await client.sendMessage(m.key.remoteJid, { 
                     text: '❌ عذراً، تعذر تحميل هذا الفيديو. تأكد من أن الرابط صحيح أو أن حجم الفيديو لا يتعدى حد الواتساب.' 
                 }, { quoted: m });
             }
