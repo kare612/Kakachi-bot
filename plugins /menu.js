@@ -7,22 +7,21 @@ export default {
   desc: 'عرض اللوحة البرمجية وكافة الأوامر المضافة للبوت',
   async execute(client, m, args) {
     try {
-      // 1. التحقق الديناميكي الذكي من بنية الرسالة لضمان جلب البيانات بشكل صحيح
+      // 1. التحقق لضمان جلب البيانات بشكل صحيح دون كراش
       const messageObj = m.message ? m : (Array.isArray(m) ? m[0] : m);
       if (!messageObj) return;
 
-      // 2. استخراج المعرفات والبيانات الأساسية للمرسل والمحادثة
-      const chatJid = m.chat || messageObj.key.remoteJid;
-      const userId = messageObj.key.participant || messageObj.participant || chatJid;
+      const chatId = m.chat || messageObj.key.remoteJid;
+      const userId = messageObj.key.participant || messageObj.participant || chatId;
       
       const userLevel = global.db?.users?.[userId]?.level || 1;
       const userMoney = global.db?.users?.[userId]?.money || 0;
-      const devNumber = global.developerNumber ? global.developerNumber.split('@')[0] : '212715469251';
+      const devNumber = '212715469251';
 
-      // رابط الصورة التي أرسلتها (تم استخراج الرابط المباشر ليعمل داخل الواتساب)
-      const menuImageUrl = 'https://i.ibb.co/BVq3pLnY/58019.jpg';
+      // 2. رابط الصورة الجديدة المربوطة بالكامل داخل الواتساب
+      const menuImageUrl = 'https://ibb.co';
 
-      // 3. بناء نص الرسالة المنسق والمزخرف بطريقة "مستفة تحت بعضها"
+      // 3. بناء نص قائمة الأوامر المزخرفة والمستفة تحت بعضها
       const fullMenu = `╔═══𓆩 *𝑲𝑨𝑲𝑨𝑺𝑯𝑰 𓂆 𝑩𝑶𝑻* 𓆪═══╗\n` +
                        `║  ⚡ *لوحـة تحكـم الأوامـر المطـورة* ⚡\n` +
                        `╚════════════════════╝\n\n` +
@@ -31,10 +30,8 @@ export default {
                        `💰 *الرصـيد:* 『 $${userMoney} 』\n` +
                        `👑 *المطـور:* @${devNumber}\n` +
                        `🗓️ *التـاريخ:* ${new Date().toLocaleDateString('ar-EG')}\n` +
-                       `🤖 *النظـام:* إيـ اس موديـول (ESM)\n` +
                        `📈 *الحـالة:* مستقـر وعـام (24/7)\n` +
                        `🌐 *البادئـة:* [ . ]\n` +
-                       `📱 *المنصـة:* تيرمكـس (Termux)\n` +
                        `───────────────────\n\n` +
                        
                        `🎬 ┃ *قسـم الميديـا والتنزيلات* 🎬\n` +
@@ -66,7 +63,7 @@ export default {
                        `• 🔘 ┋ *.رسم* ↫ تخيل وتوليد صور خيالية بجودة كاملة.\n\n` +
                        
                        `🛠️ ┃ *قسـم الأدوات والتحويل* 🛠️\n` +
-                       `── 𓆩 *𝗍𝗈𝗂𝗆𝖺𝗀𝖾.𝗃𝗌* 𓆪 ──\n` +
+                       `── 𓆩 *...تغير الإمتداد* 𓆪 ──\n` +
                        `• 🔘 ┋ *.لصورة* ↫ تحويل ملصقات الواتساب إلى صور.\n\n` +
                        
                        `📦 ┃ *قسـم متجر التطبيقات* 📦\n` +
@@ -78,15 +75,15 @@ export default {
                        `🔗 https://whatsapp.com \n\n` +
                        `𓄂 _تأكد من وضع النقطة قبل أي أمر لتنفيذه البرمجي السليم._`;
 
-      // 4. إرسال القائمة كصورة (الصورة التي أرسلتها) مع النص المزخرف وعمل المنشن
-      await client.sendMessage(chatJid, { 
+      // 4. إرسال الصورة مدمجة مع النص وعمل منشن للمستخدم والمطور
+      await client.sendMessage(chatId, { 
         image: { url: menuImageUrl },
         caption: fullMenu,
-        mentions: [userId, global.developerNumber || '212715469251@s.whatsapp.net']
+        mentions: [userId, devNumber + '@s.whatsapp.net']
       }, { quoted: messageObj });
 
     } catch (error) {
-      console.error("❌ خطأ أثناء تنفيذ أمر القائمة المحدث المطور:", error);
+      console.error("❌ خطأ أثناء تنفيذ أمر القائمة بالصورة الجديدة:", error);
     }
   }
 };
