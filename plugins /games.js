@@ -1,16 +1,27 @@
 // كود إضافات ألعاب تفاعلية بالصور لبوت كاكاشي
-const axios = require('axios');
+import axios from 'axios';
 
-module.exports = {
+export default {
     name: 'العاب',
     alias: ['لعبة', 'العاب_بوت', 'games'],
     category: 'games',
     desc: 'أوامر ألعاب تفاعلية وممتعة بالصور والأعضاء',
-    async execute(client, m, { text, args, participants }) {
+    async execute(client, m, args) { // تم تصحيح الباراميترز لتتوافق مع ملف index.js الخاص بك
         const command = args[0] ? args[0].toLowerCase() : '';
 
         // قفل حماية للتأكد من تشغيل الألعاب في المجموعات فقط لألعاب الزواج
         const isGroup = m.chat.endsWith('@g.us');
+
+        // جلب قائمة المشاركين في الجروب بشكل صحيح من كليشة الواتساب
+        let participants = [];
+        if (isGroup) {
+            try {
+                const groupMetadata = await client.groupMetadata(m.chat);
+                participants = groupMetadata.participants || [];
+            } catch (err) {
+                console.error('خطأ في جلب بيانات المجموعة:', err);
+            }
+        }
 
         // قائمة الألعاب المتاحة للمستخدم عند كتابة (.العاب) فقط
         if (!command) {
@@ -43,7 +54,7 @@ module.exports = {
                 try {
                     husbandPic = await client.profilePictureUrl(husband, 'image');
                 } catch {
-                    husbandPic = 'https://telegra.ph'; // صورة افتراضية في حال الإخفاء
+                    husbandPic = 'https://telegra.ph'; // صورة افتراضية شغالة
                 }
 
                 const weddingText = `🔔 *إعلان زواج ملكي في المجموعة!* 🔔\n\n` +
@@ -66,8 +77,7 @@ module.exports = {
         // ==================== 2️⃣ لعبة خمن الصورة ====================
         if (command === 'خمن' || command === 'صورة') {
             try {
-                // جلب صورة عشوائية وسؤال من API عام للألعاب (كمثال: أنمي أو كرتون أو حيوانات)
-                // نستخدم هنا صورة ترفيهية عشوائية جاهزة
+                // جلب صورة عشوائية وسؤال من قائمة داخلية جاهزة
                 const gameImages = [
                     { url: 'https://unsplash.com', answer: 'اسد' },
                     { url: 'https://unsplash.com', answer: 'قطة' },
@@ -76,7 +86,6 @@ module.exports = {
                 
                 const randomGame = gameImages[Math.floor(Math.random() * gameImages.length)];
 
-                // حفظ الإجابة مؤقتاً في ذاكرة البوت التلقائية إذا أردت تطويرها، أو إرسالها مبدئياً كتحدي
                 const challengeText = `🧩 *لعبة خمن ما في الصورة!* 🧩\n\n` +
                                       `🤔 ماذا ترى في هذه الصورة؟\n` +
                                       `💡 اكتب إجابتك في الشات (الجروب لديه 30 ثانية لمعرفتها).\n\n` +
@@ -94,3 +103,4 @@ module.exports = {
         }
     }
 };
+                    
