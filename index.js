@@ -72,9 +72,10 @@ async function startBot() {
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             if (!chatUpdate.messages || chatUpdate.messages.length === 0) return;
-            const m = chatUpdate.messages[0]; // قراءة واستخراج الرسالة الأساسية الأولى من المصفوفة
+            const m = chatUpdate.messages[0]; 
             
-            if (!m.message || m.key.fromMe) return;
+            // التعديل هنا: تم حذف شرط m.key.fromMe لكي يستجيب البوت لنفسه
+            if (!m.message) return;
 
             const body = m.message.conversation || m.message.extendedTextMessage?.text || '';
             if (!body.startsWith('.')) return;
@@ -93,4 +94,3 @@ async function startBot() {
 }
 
 startBot();
-        
