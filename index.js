@@ -3,32 +3,35 @@ import { Boom } from '@hapi/boom';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
-import readline from 'readline';
 
 // ==================== [ إعدادات هوية بوت كاكاشي ] ====================
 const BOT_NAME = "كاكاشي";
-const BOT_NUMBER = "212784776925";                        // رقم البوت بدون أي زيادات
+const BOT_NUMBER = "212784776925";                        // رقم البوت بدون أي زيادات أو رموز
 const DEVELOPER_NUMBER = "212715469251@s.whatsapp.net";  // رقم المطور الأسطوري
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-
 async function connectToKakashiBot() {
+    // إعداد جلسة الحفظ التلقائي
     const { state, saveCreds } = await useMultiFileAuthState('session_auth');
 
     const client = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: [BOT_NAME, 'Chrome', '1.0.0']
+        browser: ['Ubuntu', 'Chrome', '20.0.04'] // ضروري ليعمل كود الربط بشكل صحيح
     });
 
     // تفعيل خاصية كود التحقق الرقمي (Pairing Code) بدلاً من الـ QR
     if (!client.authState.creds.registered) {
         setTimeout(async () => {
-            let code = await client.requestPairingCode(BOT_NUMBER);
-            code = code?.match(/.{1,4}/g)?.join('-') || code;
-            console.log(`\n🔑 [كود ربط بوت كاكاشي]: ${code}\n`);
-            console.log(`💡 افتح الواتساب -> الأجهزة المرتبطة -> ربط جهاز -> ربط باستخدام رقم الهاتف، ثم أدخل الكود الموضح بالأعلى.`);
+            try {
+                let code = await client.requestPairingCode(BOT_NUMBER);
+                code = code?.match(/.{1,4}/g)?.join('-') || code;
+                console.log(`\n==================================================`);
+                console.log(`🔑 [كود ربط بوت كاكاشي]: ${code}`);
+                console.log(`==================================================\n`);
+                console.log(`💡 افتح الواتساب -> الأجهزة المرتبطة -> ربط جهاز -> ربط باستخدام رقم الهاتف، ثم أدخل الكود الموضح بالأعلى.`);
+            } catch (err) {
+                console.error('❌ فشل في جلب كود التحقق الرقمي:', err);
+            }
         }, 3000);
     }
 
@@ -114,11 +117,11 @@ async function connectToKakashiBot() {
             }
         } else if (connection === 'open') {
             console.log(`\n==================================================`);
-            console.log(`🚀 تم تشغيل [بوت كاكاشي] بنجاح عن طريق كود التحقق الرقمي!`);
+            console.log(`🚀 تم تشغيل [بوت كاكاشي] بنجاح وتم الربط الكود الرقمي!`);
             console.log(`==================================================\n`);
         }
     });
 }
 
 connectToKakashiBot();
-                
+            
