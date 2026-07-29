@@ -1,24 +1,36 @@
-import { makeWASocket, useMultiFileAuthState, disconnectReason } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
+import readline from 'readline';
 
 // ==================== [ إعدادات هوية بوت كاكاشي ] ====================
 const BOT_NAME = "كاكاشي";
-const BOT_NUMBER = "212784776925@s.whatsapp.net";        // رقم البوت الخاص بك
+const BOT_NUMBER = "212784776925";                        // رقم البوت بدون أي زيادات
 const DEVELOPER_NUMBER = "212715469251@s.whatsapp.net";  // رقم المطور الأسطوري
 
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+
 async function connectToKakashiBot() {
-    // إعداد جلسة الحفظ التلقائي لتسجيل الدخول دون الحاجة للـ QR كل مرة
     const { state, saveCreds } = await useMultiFileAuthState('session_auth');
 
     const client = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
         logger: pino({ level: 'silent' }),
         browser: [BOT_NAME, 'Chrome', '1.0.0']
     });
+
+    // تفعيل خاصية كود التحقق الرقمي (Pairing Code) بدلاً من الـ QR
+    if (!client.authState.creds.registered) {
+        setTimeout(async () => {
+            let code = await client.requestPairingCode(BOT_NUMBER);
+            code = code?.match(/.{1,4}/g)?.join('-') || code;
+            console.log(`\n🔑 [كود ربط بوت كاكاشي]: ${code}\n`);
+            console.log(`💡 افتح الواتساب -> الأجهزة المرتبطة -> ربط جهاز -> ربط باستخدام رقم الهاتف، ثم أدخل الكود الموضح بالأعلى.`);
+        }, 3000);
+    }
 
     client.ev.on('creds.update', saveCreds);
 
@@ -47,57 +59,41 @@ async function connectToKakashiBot() {
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             const msg = chatUpdate.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
+            if (!msg || !msg.message || msg.key.fromMe) return;
 
             const chatJid = msg.key.remoteJid;
             
-            // جلب نص الرسالة بأي شكل كانت (نص، نص ممتد، أو كابشن صورة)
             const messageType = Object.keys(msg.message)[0];
             let body = '';
             if (messageType === 'conversation') body = msg.message.conversation;
             else if (messageType === 'extendedTextMessage') body = msg.message.extendedTextMessage.text;
             else if (messageType === 'imageMessage') body = msg.message.imageMessage.caption;
 
-            // تحديد بادئة الأوامر (البريفكس مثل ".")
             const prefix = '.';
             if (!body.startsWith(prefix)) return;
 
-            // تشريح النص واستخراج اسم الأمر والمُعطيات
             const args = body.slice(prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
 
-            // فحص هوية المرسل (سواء في الخاص أو المجموعات)
             const senderNumber = msg.key.participant || msg.key.remoteJid;
             const isDeveloper = (senderNumber.split('@')[0] === DEVELOPER_NUMBER.split('@')[0]);
 
-            // البحث عن الأمر داخل نظام إضافات كاكاشي وتنفيذه
             let commandFound = false;
             for (const key in plugins) {
                 const plugin = plugins[key];
                 
-                // التحقق من الاسم الأساسي أو الأسماء المستعارة (Alias)
                 if (plugin.name === commandName || (plugin.alias && plugin.alias.includes(commandName))) {
                     commandFound = true;
 
-                    // حماية أوامر المطورين
                     if (plugin.category === 'owner' && !isDeveloper) {
                         return await client.sendMessage(chatJid, { text: `⚠️ عذراً، هذا الأمر مخصص للمطور الأسطوري لبوت كاكاشي فقط!` }, { quoted: msg });
                     }
 
-                    // تجهيز المتغيرات وتمريرها لملف اللعبة أو الإضافة
-                    const customMessageContext = {
-                        chat: chatJid,
-                        key: msg.key,
-                        message: msg.message,
-                        participant: msg.key.participant
-                    };
-
-                    await plugin.execute(client, customMessageContext, [commandName, ...args]);
+                    await plugin.execute(client, msg, args);
                     break;
                 }
             }
 
-            // أمر فحص سريع خاص بالمطور الأسطوري للتأكد من رتبته
             if (!commandFound && commandName === 'رتبتي') {
                 const roleText = isDeveloper ? "👑 أنت المطور الأسطوري لبوت كاكاشي ولجهاز التشغيل الكامل!" : "👤 أنت عضو مستخدم للبوت.";
                 await client.sendMessage(chatJid, { text: roleText }, { quoted: msg });
@@ -108,25 +104,21 @@ async function connectToKakashiBot() {
         }
     });
 
-    // مراقبة حالة الاتصال بالواتساب وإعادة تشغيل السيرفر تلقائياً
     client.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== disconnectReason.loggedOut : true;
+            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
             if (shouldReconnect) {
                 console.log(`🔄 جاري إعادة اتصال بوت ${BOT_NAME}...`);
                 connectToKakashiBot();
             }
         } else if (connection === 'open') {
             console.log(`\n==================================================`);
-            console.log(`🚀 تم تشغيل [بوت كاكاشي] بنجاح!`);
-            console.log(`📱 رقم البوت: ${BOT_NUMBER.split('@')[0]}`);
-            console.log(`👑 المطور الأسطوري: ${DEVELOPER_NUMBER.split('@')[0]}`);
+            console.log(`🚀 تم تشغيل [بوت كاكاشي] بنجاح عن طريق كود التحقق الرقمي!`);
             console.log(`==================================================\n`);
         }
     });
 }
 
-// إطلاق البوت
 connectToKakashiBot();
-        
+                
