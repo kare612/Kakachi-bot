@@ -16,7 +16,7 @@ export default {
         try {
             await sock.sendMessage(chatJid, { text: '🤖 *جاري التفكير وصياغة الإجابة الذكية...*' }, { quoted: msg });
 
-            // استخدام سيرفر بديل فائق السرعة والاستقرار للذكاء الاصطناعي
+            // استخدام سيرفر بديل ومستقر تماماً ومفتوح بدون أخطاء في تركيب الرابط
             const response = await axios.get(`https://onrender.com{encodeURIComponent(userPrompt)}`);
             
             const aiReply = response.data?.reply || response.data?.content || '❌ لم أتمكن من معالجة الرد حالياً.';
@@ -31,4 +31,3 @@ export default {
         }
     }
 };
-        
