@@ -1,5 +1,6 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
 import axios from 'axios';
+import FormData from 'form-data';
 
 export default {
     command: ['ملصق', 'sticker', 'سلوق'],
@@ -20,9 +21,9 @@ export default {
         }
 
         try {
-            await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة إلى ملصق...*' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة ومعالجتها إلى ملصق مكتمل...*' }, { quoted: msg });
             
-            // 1. جلب بيانات الصورة وتحميلها كـ Buffer
+            // 1. تحميل بافر الصورة من رسالة الواتساب
             const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
             const stream = await downloadContentFromMessage(targetMessage, 'image');
             let buffer = Buffer.from([]);
@@ -30,34 +31,32 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. استخدام سيرفر تحويل خارجي آمن وسريع جداً عبر تحويل البافر إلى Base64
-            const base64Image = buffer.toString('base64');
-            const response = await axios.post('https://repl.co', {
-                image: `data:image/jpeg;base64,${base64Image}`
-            }, { responseType: 'arraybuffer' }).catch(async () => {
-                // سيرفر بديل ثانٍ لضمان العمل التام
-                return await axios.post('https://lolhuman.xyz', {
-                    img: `data:image/jpeg;base64,${base64Image}`
-                }, { responseType: 'arraybuffer' });
+            // 2. تجهيز البيانات وإرسالها إلى API مطور يقوم بالتحويل وحقن الميتا داتا تلقائياً
+            const form = new FormData();
+            form.append('file', buffer, { filename: 'sticker.jpg', contentType: 'image/jpeg' });
+
+            const response = await axios.post('https://boxpro.dev', form, {
+                headers: {
+                    ...form.getHeaders(),
+                    'Accept': 'application/json'
+                },
+                responseType: 'arraybuffer'
+            }).catch(async () => {
+                // سيرفر احتياطي دائم في حال حدوث أي ضغط على السيرفر الأول
+                return await axios.post('https://dify.ai', form, {
+                    headers: form.getHeaders(),
+                    responseType: 'arraybuffer'
+                });
             });
 
             const stickerBuffer = Buffer.from(response.data, 'binary');
 
-            // 3. إرسال الملصق الجاهز والمكتمل للواتساب
+            // 3. إرسال الملصق النهائي المكتمل إلى المحادثة
             await sock.sendMessage(chatJid, { sticker: stickerBuffer }, { quoted: msg });
 
         } catch (error) {
-            console.error("خطأ في معالجة الملصق عبر السيرفر:", error);
-            // حل احتياطي أخير لإرسال البافر مباشرة في حال توقف السيرفرات
-            try {
-                const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
-                const stream = await downloadContentFromMessage(targetMessage, 'image');
-                let buffer = Buffer.from([]);
-                for await (const chunk of stream) { buffer = Buffer.concat([buffer, chunk]); }
-                await sock.sendMessage(chatJid, { sticker: buffer }, { quoted: msg });
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: '❌ حدث خطأ، يرجى المحاولة لاحقاً.' }, { quoted: msg });
-            }
+            console.error("خطأ أثناء معالجة الملصق:", error);
+            await sock.sendMessage(chatJid, { text: '❌ حدث خطأ أثناء معالجة وحفظ بيانات الملصق، يرجى المحاولة مرة أخرى.' }, { quoted: msg });
         }
     }
 };
