@@ -22,7 +22,6 @@ async function loadPlugins() {
             const fileUrl = `file://${pluginPath}`;
             try {
                 const plugin = await import(fileUrl);
-                // معالجة تصدير الكائن لضمان قراءته بشكل سليم
                 const validPlugin = plugin.default || plugin;
                 
                 if (validPlugin && validPlugin.command) {
@@ -81,11 +80,15 @@ async function startBot() {
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
-        const msg = m.messages[0];
-        // تم إلغاء شرط msg.key.fromMe لكي يستجيب البوت للأوامر التي تكتبها بنفسك للتجربة
-        if (!msg.message) return;
+        const msg = m.messages[0]; // قراءة الرسالة الأولى المتاحة في المصفوفة
+        if (!msg || !msg.message) return;
 
-        const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+        // طريقة متطورة وشاملة لاستخراج النص البرمي الصحيح من المحادثة
+        const text = msg.message.conversation || 
+                     msg.message.extendedTextMessage?.text || 
+                     msg.message.imageMessage?.caption || 
+                     msg.message.videoMessage?.caption || '';
+
         if (!text.startsWith('.')) return;
 
         const args = text.slice(1).trim().split(/ +/);
@@ -95,17 +98,21 @@ async function startBot() {
         if (!command) return;
 
         try {
-            // تشغيل الدالة بشكل مرن سواء كانت مصدّرة كـ default أو مباشرة
-            if (typeof command.default === 'function') {
+            // التحقق من تفعيل الدالة وتشغيلها بشكل آمن
+            if (command.default && typeof command.default === 'function') {
                 await command.default({ sock, msg, args });
             } else if (typeof command === 'function') {
                 await command({ sock, msg, args });
+            } else if (command.execute && typeof command.execute === 'function') {
+                await command.execute({ sock, msg, args });
             }
         } catch (err) {
             console.error(`خطأ أثناء تنفيذ الأمر ${commandName}:`, err);
-            await sock.sendMessage(msg.key.remoteJid, { text: 'حدث خطأ داخلي أثناء تنفيذ هذا الأمر.' });
+            const chatJid = msg.key.remoteJid;
+            await sock.sendMessage(chatJid, { text: 'حدث خطأ داخلي أثناء تنفيذ هذا الأمر.' });
         }
     });
 }
 
 startBot();
+            
