@@ -1,5 +1,6 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
 import axios from 'axios';
+import FormData from 'form-data';
 
 export default {
     command: ['ملصق', 'sticker', 'سلوق'],
@@ -30,26 +31,33 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. تحويل الصورة عبر سيرفرات معالجة معتمدة ومفتوحة بدون أخطاء تركيبية
-            const base64 = buffer.toString('base64');
-            let res;
+            // 2. الرفع على سيرفر تليجرام المستقر بدلاً من السيرفرات المتعطلة
+            const form = new FormData();
+            form.append('file', buffer, { filename: 'sticker.jpg', mimetype: 'image/jpeg' });
             
+            const uploadRes = await axios.post('https://telegra.ph', form, {
+                headers: form.getHeaders()
+            });
+            
+            const imgUrl = 'https://telegra.ph' + uploadRes.data[0].src;
+
+            // 3. تحويل الرابط إلى ملصق بصيغة WebP
+            let res;
             try {
-                // المحاولة الأولى باستخدام سيرفر معالجة بهيئة ويب بي
-                res = await axios.post('https://html2pdf.app', {
-                    html: `<img src="data:image/jpeg;base64,${base64}" style="width:512px;height:512px;object-fit:contain;"/>`,
-                    format: 'webp'
-                }, { responseType: 'arraybuffer' });
+                // السيرفر الأول
+                res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(imgUrl)}`, {
+                    responseType: 'arraybuffer'
+                });
             } catch {
-                // المحاولة الثانية عبر السيرفر الاحتياطي مع صياغة الرابط بالشكل الصحيح برمجياً باستخدام علامات المائل العكسي ` `
-                res = await axios.get(`https://lolhuman.xyz{base64}`, {
+                // السيرفر الاحتياطي في حال توقف الأول
+                res = await axios.get(`https://sticker-maker.xyz{encodeURIComponent(imgUrl)}`, {
                     responseType: 'arraybuffer'
                 });
             }
 
             const finalSticker = Buffer.from(res.data, 'binary');
 
-            // 3. الإرسال الصارم كملصق متوافق مع كافة الهواتف
+            // 4. الإرسال كملصق متوافق مع كافة الهواتف والأنظمة
             await sock.sendMessage(chatJid, { 
                 sticker: finalSticker,
                 mimetype: 'image/webp'
