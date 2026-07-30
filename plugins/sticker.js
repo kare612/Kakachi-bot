@@ -1,6 +1,10 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
-import axios from 'axios';
-import FormData from 'form-data';
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { promisify } from 'util';
+
+const execPromise = promisify(exec);
 
 export default {
     command: ['ملصق', 'sticker', 'سلوق'],
@@ -20,8 +24,12 @@ export default {
             }, { quoted: msg });
         }
 
+        // مسارات عشوائية ومؤقتة لحفظ الصور داخل جهازك لمعالجتها
+        const tmpInput = path.join(process.cwd(), `tmp_input_${Date.now()}.jpg`);
+        const tmpOutput = path.join(process.cwd(), `tmp_output_${Date.now()}.webp`);
+
         try {
-            await sock.sendMessage(chatJid, { text: '⏳ *جاري معالجة وإرسال الملصق فوراً...*' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '⏳ *جاري توليد الملصق محلياً بسرعة فائقة...*' }, { quoted: msg });
             
             // 1. تحميل بافر الصورة من رسالة الواتساب
             const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
@@ -31,33 +39,15 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. الرفع على سيرفر تليجرام المستقر بدلاً من السيرفرات المتعطلة
-            const form = new FormData();
-            form.append('file', buffer, { filename: 'sticker.jpg', mimetype: 'image/jpeg' });
-            
-            const uploadRes = await axios.post('https://telegra.ph', form, {
-                headers: form.getHeaders()
-            });
-            
-            const imgUrl = 'https://telegra.ph' + uploadRes.data[0].src;
+            // 2. حفظ ملف الصورة مؤقتاً في نظام التشغيل
+            await fs.promises.writeFile(tmpInput, buffer);
 
-            // 3. تحويل الرابط إلى ملصق بصيغة WebP
-            let res;
-            try {
-                // السيرفر الأول
-                res = await axios.get(`https://lolhuman.xyz{encodeURIComponent(imgUrl)}`, {
-                    responseType: 'arraybuffer'
-                });
-            } catch {
-                // السيرفر الاحتياطي في حال توقف الأول
-                res = await axios.get(`https://sticker-maker.xyz{encodeURIComponent(imgUrl)}`, {
-                    responseType: 'arraybuffer'
-                });
-            }
+            // 3. تحويل الصورة إلى ملصق ويب بي محلياً باستخدام أداة النظام ffmpeg المدمجة بدون روابط خارجية
+            await execPromise(`ffmpeg -i "${tmpInput}" -vcodec libwebp -vf "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,pad=512:512:(512-iw)/2:(512-ih)/2:color=white@0" -lossless 1 "${tmpOutput}"`);
 
-            const finalSticker = Buffer.from(res.data, 'binary');
+            const finalSticker = await fs.promises.readFile(tmpOutput);
 
-            // 4. الإرسال كملصق متوافق مع كافة الهواتف والأنظمة
+            // 4. الإرسال الفوري كملصق متوافق مع كافة الهواتف والأنظمة
             await sock.sendMessage(chatJid, { 
                 sticker: finalSticker,
                 mimetype: 'image/webp'
@@ -65,8 +55,11 @@ export default {
 
         } catch (error) {
             console.error("خطأ أثناء معالجة الملصق:", error);
-            await sock.sendMessage(chatJid, { text: '❌ واجه البوت مشكلة في التوافق أثناء العرض الفوري للملصق.' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '❌ واجه البوت مشكلة في المعالجة المحلية، يرجى التأكد من تثبيت حزمة ffmpeg.' }, { quoted: msg });
+        } finally {
+            // تنظيف وحذف الملفات المؤقتة من الجهاز للحفاظ على المساحة
+            if (fs.existsSync(tmpInput)) fs.unlinkSync(tmpInput);
+            if (fs.existsSync(tmpOutput)) fs.unlinkSync(tmpOutput);
         }
     }
 };
-                
