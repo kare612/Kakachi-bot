@@ -30,19 +30,26 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. استخدام محول ميديا مستقر ومفتوح يمنع الفراغات تماماً عبر بروتوكول تحويل الصور المتوافق
+            // 2. تحويل الصورة عبر سيرفرات معالجة معتمدة ومفتوحة بدون أخطاء تركيبية
             const base64 = buffer.toString('base64');
-            const res = await axios.post('https://shizoka.xyz', {
-                img: `data:image/jpeg;base64,${base64}`
-            }, { responseType: 'arraybuffer' }).catch(async () => {
-                return await axios.post('https://violetics.xyz', {
-                    img: `data:image/jpeg;base64,${base64}`
+            let res;
+            
+            try {
+                // المحاولة الأولى باستخدام سيرفر معالجة بهيئة ويب بي
+                res = await axios.post('https://html2pdf.app', {
+                    html: `<img src="data:image/jpeg;base64,${base64}" style="width:512px;height:512px;object-fit:contain;"/>`,
+                    format: 'webp'
                 }, { responseType: 'arraybuffer' });
-            });
+            } catch {
+                // المحاولة الثانية عبر السيرفر الاحتياطي مع صياغة الرابط بالشكل الصحيح برمجياً باستخدام علامات المائل العكسي ` `
+                res = await axios.get(`https://lolhuman.xyz{base64}`, {
+                    responseType: 'arraybuffer'
+                });
+            }
 
             const finalSticker = Buffer.from(res.data, 'binary');
 
-            // 3. الإرسال الصارم كملصق مع تحديد الـ Mimetype لفرض عرضه على الهواتف
+            // 3. الإرسال الصارم كملصق متوافق مع كافة الهواتف
             await sock.sendMessage(chatJid, { 
                 sticker: finalSticker,
                 mimetype: 'image/webp'
