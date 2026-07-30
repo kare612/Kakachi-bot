@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 export default {
     command: ['الاوامر', 'menu', 'أوامر', 'help', 'قائمة'],
     category: 'user',
@@ -46,11 +48,19 @@ export default {
 ✨ ¦ _تم التطوير بواسطة كاكاشي الأسطوري_
         `.trim();
 
-        // إرسال الصورة في القمة وأسفلها نص الأوامر المزخرف
-        await sock.sendMessage(chatJid, { 
-            image: { url: 'https://i.ibb.co/dJDHbPpS/62674.jpg' },
-            caption: menuText
-        }, { quoted: msg });
+        try {
+            // جلب الصورة كـ Buffer لضمان تحميلها بالكامل وإظهارها فوراً في شات الواتساب
+            const response = await axios.get('https://i.ibb.co/dJDHbPpS/62674.jpg', { responseType: 'arraybuffer' });
+            const imageBuffer = Buffer.from(response.data, 'binary');
+
+            await sock.sendMessage(chatJid, { 
+                image: imageBuffer,
+                caption: menuText
+            }, { quoted: msg });
+            
+        } catch (error) {
+            console.error("خطأ في تحميل الصورة من الرابط، جاري إرسال النص فقط:", error);
+            await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
+        }
     }
 };
-    
