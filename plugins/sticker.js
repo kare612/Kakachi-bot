@@ -23,7 +23,6 @@ export default {
         try {
             await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة ومعالجتها إلى ملصق...*' }, { quoted: msg });
             
-            // 1. جلب بيانات الصورة وتحميلها كـ Buffer
             const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
             const stream = await downloadContentFromMessage(targetMessage, 'image');
             let buffer = Buffer.from([]);
@@ -31,29 +30,28 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // 2. تحويل الصورة إلى تنسيق Webp مدعوم عبر API مجاني لضمان ظهورها
             const formData = new FormData();
             formData.append('file', buffer, 'image.jpg');
 
-            const response = await axios.post('https://ezgif.com', formData, {
-                headers: formData.getHeaders(),
-                responseType: 'arraybuffer'
-            }).catch(async () => {
-                // سيرفر احتياطي في حال توقف الأول
-                return await axios.post('https://w3cub.com', formData, {
+            let stickerBuffer;
+            try {
+                const response = await axios.post('https://ezgif.com', formData, {
                     headers: formData.getHeaders(),
                     responseType: 'arraybuffer'
                 });
-            });
+                stickerBuffer = Buffer.from(response.data, 'binary');
+            } catch (err) {
+                const fallbackResponse = await axios.post('https://w3cub.com', formData, {
+                    headers: formData.getHeaders(),
+                    responseType: 'arraybuffer'
+                });
+                stickerBuffer = Buffer.from(fallbackResponse.data, 'binary');
+            }
 
-            const stickerBuffer = Buffer.from(response.data, 'binary');
-
-            // 3. إرسال الملصق الجاهز والمكتمل للواتساب
             await sock.sendMessage(chatJid, { sticker: stickerBuffer }, { quoted: msg });
 
         } catch (error) {
             console.error("خطأ في معالجة الملصق:", error);
-            // حل احتياطي: إذا فشل السيرفر يتم إرسال البافر العادي
             try {
                 const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
                 const stream = await downloadContentFromMessage(targetMessage, 'image');
@@ -63,11 +61,6 @@ export default {
             } catch (err) {
                 await sock.sendMessage(chatJid, { text: '❌ حدث خطأ أثناء تحويل الملصق، يرجى المحاولة لاحقاً.' }, { quoted: msg });
             }
-        }
-    }
-};
-                                              console.error("خطأ في معالجة الملصق:", error);
-            await sock.sendMessage(chatJid, { text: '❌ حدث خطأ أثناء تحويل الصورة إلى ملصق.' }, { quoted: msg });
         }
     }
 };
