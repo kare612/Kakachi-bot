@@ -19,7 +19,7 @@ export default {
         try {
             await sock.sendMessage(chatJid, { text: '⏳ *جاري المعالجة وسحب الملف من السيرفر المستقر...*' }, { quoted: msg });
 
-            // سيرفر تحميل عام وسريع جداً مخصص للبوتات لتجنب الأخطاء الداخلية
+            // استخدام API تحميل سريع ومفتوح ومخصص للبوتات لتفادي الحظر والأخطاء الداخلية
             const apiUrl = `https://vreden.web.id{encodeURIComponent(videoUrl)}`;
             const response = await axios.get(apiUrl);
             
@@ -28,7 +28,7 @@ export default {
 
             if (!targetMediaUrl) throw new Error("Media URL not found");
 
-            // جلب بافر الملف وإرساله
+            // جلب بافر الملف الصوتي أو المرئي
             const mediaRes = await axios.get(targetMediaUrl, { responseType: 'arraybuffer' });
             const mediaBuffer = Buffer.from(mediaRes.data, 'binary');
 
@@ -54,4 +54,3 @@ export default {
         }
     }
 };
-                    
