@@ -1,3 +1,5 @@
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -23,12 +25,11 @@ async function loadPlugins() {
 
     for (const file of files) {
         try {
-            // استخدام import() الديناميكي لقراءة export default
+            // استيراد ديناميكي يدعم صيغ الـ export default
             const pluginModule = await import(`./plugins/${file}`);
             const plugin = pluginModule.default;
 
             if (plugin && plugin.name) {
-                // تسجيل الاسم الرئيسي للأمر
                 commands.set(plugin.name, plugin);
 
                 // تسجيل الأسماء المستعارة (مثل menu, أوامر، help) إذا وجدت
@@ -37,7 +38,7 @@ async function loadPlugins() {
                         aliases.set(aliasName, plugin);
                     }
                 }
-                console.log(`✅ تم تحميل أمر القائمة بنجاح: ${plugin.name}`);
+                console.log(`✅ تم تحميل ملف الإضافة بنجاح: ${plugin.name}`);
             }
         } catch (error) {
             console.error(`❌ خطأ في تحميل ملف الإضافة ${file}:`, error);
@@ -45,35 +46,61 @@ async function loadPlugins() {
     }
 }
 
-// استدعاء دالة التحميل
-await loadPlugins();
+// دالة بدء تشغيل البوت والاتصال بالواتساب
+async function startBot() {
+    await loadPlugins();
 
-// داخل حدث استقبال الرسائل (WhatsApp Messages Upsert)
-client.ev.on('messages.upsert', async (chatUpdate) => {
-    try {
-        const msg = chatUpdate.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+    const { state, saveCreds } = await useMultiFileAuthState('session');
 
-        // الحصول على نص الرسالة
-        const messageText = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
-        
-        // تحديد البريفكس المستعمل (النقطة .)
-        const prefix = "."; 
-        if (!messageText.startsWith(prefix)) return;
+    // إنشاء اتصال الواتساب بالمتغير الصحيح sock
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true, // تغييرها لـ false إذا كنت تستخدم كود الربط الرقمي الـ Pairing
+        logger: pino({ level: 'silent' })
+    });
 
-        // تفكيك النص لاستخراج اسم الأمر والمدخلات
-        const args = messageText.slice(prefix.length).trim().split(/ +/);
-        const commandName = args.shift().toLowerCase();
+    sock.ev.on('creds.update', saveCreds);
 
-        // البحث عن الأمر بالاسم الرئيسي أو عبر الاسم المستعار (Alias)
-        const command = commands.get(commandName) || aliases.get(commandName);
+    // معالجة حدث استقبال ومعالجة الرسائل والأوامر
+    sock.ev.on('messages.upsert', async (chatUpdate) => {
+        try {
+            const msg = chatUpdate.messages[0];
+            if (!msg.message || msg.key.fromMe) return;
 
-        if (command) {
-            // تشغيل دالة execute المكتوبة في ملف menu.js الخاص بك
-            await command.execute(client, msg, args);
+            const messageText = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+            
+            // البادئة (البريفكس) المستعملة للأوامر
+            const prefix = "."; 
+            if (!messageText.startsWith(prefix)) return;
+
+            const args = messageText.slice(prefix.length).trim().split(/ +/);
+            const commandName = args.shift().toLowerCase();
+
+            // البحث عن الأمر بالاسم الرئيسي أو عبر الاسم المستعار (Alias)
+            const command = commands.get(commandName) || aliases.get(commandName);
+
+            if (command) {
+                // تنفيذ الأمر بإرسال المتغيرات الثلاثة (sock, msg, args)
+                await command.execute(sock, msg, args);
+            }
+        } catch (err) {
+            console.error("❌ خطأ أثناء معالجة الأمر داخل الشات:", err);
         }
-    } catch (err) {
-        console.error("خطأ أثناء تنفيذ الأمر المعين:", err);
-    }
-});
-        
+    });
+
+    // إدارة حالة الاتصال وإعادة التشغيل التلقائي عند انقطاع الشبكة
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('🔄 تم إغلاق الاتصال بسبب الخطأ، جاري إعادة المحاولة: ', shouldReconnect);
+            if (shouldReconnect) {
+                startBot();
+            }
+        } else if (connection === 'open') {
+            console.log('🚀 تم تشغيل بوت كاكاشي بنجاح والاتصال بالواتساب مستقر الآن!');
+        }
+    });
+}
+
+startBot();
