@@ -1,5 +1,5 @@
 export default {
-    command: ['ping', 'بينج'],
+    command: ['ping', 'بينجك'],
     category: 'user',
     async default({ sock, msg, args }) {
         const chatJid = msg.key.remoteJid;
