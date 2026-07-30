@@ -1,8 +1,7 @@
 export default {
-    name: 'الاوامر',
-    alias: ['menu', 'أوامر', 'help', 'قائمة'],
+    command: ['الاوامر', 'menu', 'أوامر', 'help', 'قائمة'], // تعديل المسمى ليتوافق مع index.js
     category: 'user',
-    async execute(client, msg, args) {
+    async default({ sock, msg, args }) { // تعديل المدخلات لتطابق دالة الاستدعاء في البوت
         const chatJid = msg.key.remoteJid;
         
         const menuText = `
@@ -35,6 +34,6 @@ export default {
 ✨ ¦ _تم التطوير بواسطة كاكاشي الأسطوري_
         `.trim();
 
-        await client.sendMessage(chatJid, { text: menuText }, { quoted: msg });
+        await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
     }
 };
