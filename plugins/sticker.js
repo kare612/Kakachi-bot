@@ -1,6 +1,5 @@
 import { downloadContentFromMessage } from '@whiskeysockets/baileys';
-import axios from 'axios';
-import FormData from 'form-data';
+import sharp from 'sharp';
 
 export default {
     command: ['ملصق', 'sticker', 'سلوق'],
@@ -21,8 +20,9 @@ export default {
         }
 
         try {
-            await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة ومعالجتها إلى ملصق...*' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة ومعالجتها محلياً إلى ملصق...*' }, { quoted: msg });
             
+            // 1. جلب بيانات الصورة وتحميلها كـ Buffer
             const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
             const stream = await downloadContentFromMessage(targetMessage, 'image');
             let buffer = Buffer.from([]);
@@ -30,37 +30,21 @@ export default {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            const formData = new FormData();
-            formData.append('file', buffer, 'image.jpg');
+            // 2. استخدام مكتبة sharp لمعالجة الصورة وتحويل أبعادها وصيغتها لتوافق الواتساب تماماً
+            const stickerBuffer = await sharp(buffer)
+                .resize(512, 512, {
+                    fit: 'contain',
+                    background: { r: 0, g: 0, b: 0, alpha: 0 } // خلفية شفافة للملصق
+                })
+                .webp() // تحويل صيغة الصورة إلى WebP المطلوبة للملصقات
+                .toBuffer();
 
-            let stickerBuffer;
-            try {
-                const response = await axios.post('https://ezgif.com', formData, {
-                    headers: formData.getHeaders(),
-                    responseType: 'arraybuffer'
-                });
-                stickerBuffer = Buffer.from(response.data, 'binary');
-            } catch (err) {
-                const fallbackResponse = await axios.post('https://w3cub.com', formData, {
-                    headers: formData.getHeaders(),
-                    responseType: 'arraybuffer'
-                });
-                stickerBuffer = Buffer.from(fallbackResponse.data, 'binary');
-            }
-
+            // 3. إرسال الملصق الجاهز والمكتمل للواتساب
             await sock.sendMessage(chatJid, { sticker: stickerBuffer }, { quoted: msg });
 
         } catch (error) {
-            console.error("خطأ في معالجة الملصق:", error);
-            try {
-                const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
-                const stream = await downloadContentFromMessage(targetMessage, 'image');
-                let buffer = Buffer.from([]);
-                for await (const chunk of stream) { buffer = Buffer.concat([buffer, chunk]); }
-                await sock.sendMessage(chatJid, { sticker: buffer }, { quoted: msg });
-            } catch (err) {
-                await sock.sendMessage(chatJid, { text: '❌ حدث خطأ أثناء تحويل الملصق، يرجى المحاولة لاحقاً.' }, { quoted: msg });
-            }
+            console.error("خطأ في معالجة الملصق عبر sharp:", error);
+            await sock.sendMessage(chatJid, { text: '❌ حدث خطأ داخلي أثناء معالجة الملصق محلياً.' }, { quoted: msg });
         }
     }
 };
