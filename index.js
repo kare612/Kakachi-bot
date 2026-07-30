@@ -9,7 +9,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const commands = new Map();
-const aliases = new Map();
 const pluginsFolder = path.join(__dirname, 'plugins');
 
 async function loadPlugins() {
@@ -23,16 +22,13 @@ async function loadPlugins() {
             const fileUrl = `file://${pluginPath}`;
             try {
                 const plugin = await import(fileUrl);
-                if (plugin.default && plugin.default.command) {
-                    const cmdArray = Array.isArray(plugin.default.command) ? plugin.default.command : [plugin.default.command];
+                // معالجة تصدير الكائن لضمان قراءته بشكل سليم
+                const validPlugin = plugin.default || plugin;
+                
+                if (validPlugin && validPlugin.command) {
+                    const cmdArray = Array.isArray(validPlugin.command) ? validPlugin.command : [validPlugin.command];
                     for (const cmd of cmdArray) {
-                        commands.set(cmd, plugin.default);
-                    }
-                    if (plugin.default.aliases) {
-                        const aliasArray = Array.isArray(plugin.default.aliases) ? plugin.default.aliases : [plugin.default.aliases];
-                        for (const alias of aliasArray) {
-                            aliases.set(alias, plugin.default);
-                        }
+                        commands.set(cmd.toLowerCase(), validPlugin);
                     }
                 }
             } catch (err) {
@@ -50,12 +46,11 @@ async function startBot() {
     const sock = makeWASocket({
         version,
         auth: state,
-        printQRInTerminal: false, // تم الإيقاف لتفعيل كود الاقتران النصي بدلاً من QR
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // كود طلب الاقتران التلقائي عبر رقم الهاتف الخاص بك
     if (!sock.authState.creds.registered) {
         const phoneNumber = "212784776925"; 
         setTimeout(async () => {
@@ -77,19 +72,18 @@ async function startBot() {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
-            console.log('تم إغلاق الاتصال بسبب:', lastDisconnect.error, 'جاري إعادة الاتصال:', shouldReconnect);
-            if (shouldReconnect) {
-                startBot();
-            }
+            console.log('تم إغلاق الاتصال، جاري إعادة الاتصال:', shouldReconnect);
+            if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('تم فتح الاتصال بنجاح وتفعيل البوت!');
+            console.log('✅ تم فتح الاتصال بنجاح وتفعيل البوت واصبح جاهزاً للرد!');
         }
     });
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
         const msg = m.messages[0];
-        if (!msg.message || msg.key.fromMe) return;
+        // تم إلغاء شرط msg.key.fromMe لكي يستجيب البوت للأوامر التي تكتبها بنفسك للتجربة
+        if (!msg.message) return;
 
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
         if (!text.startsWith('.')) return;
@@ -97,14 +91,19 @@ async function startBot() {
         const args = text.slice(1).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
 
-        const command = commands.get(commandName) || aliases.get(commandName);
+        const command = commands.get(commandName);
         if (!command) return;
 
         try {
-            await command.default({ sock, msg, args });
+            // تشغيل الدالة بشكل مرن سواء كانت مصدّرة كـ default أو مباشرة
+            if (typeof command.default === 'function') {
+                await command.default({ sock, msg, args });
+            } else if (typeof command === 'function') {
+                await command({ sock, msg, args });
+            }
         } catch (err) {
             console.error(`خطأ أثناء تنفيذ الأمر ${commandName}:`, err);
-            await sock.sendMessage(msg.key.remoteJid, { text: 'حدث خطأ أثناء تنفيذ هذا الأمر.' });
+            await sock.sendMessage(msg.key.remoteJid, { text: 'حدث خطأ داخلي أثناء تنفيذ هذا الأمر.' });
         }
     });
 }
