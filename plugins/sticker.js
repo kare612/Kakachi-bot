@@ -6,11 +6,14 @@ export default {
     async default({ sock, msg, args }) {
         const chatJid = msg.key.remoteJid;
         
-        // التحقق من نوع الرسالة (سواء كانت صورة مباشرة أو رداً على صورة)
-        const messageType = msg.message?.imageMessage || 
-                            msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+        // التحقق الآمن والمحمي لمنع ظهور خطأ null أو توقف البوت
+        const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+        const quotedMessage = contextInfo?.quotedMessage;
 
-        if (!messageType) {
+        const isDirectImage = msg.message?.imageMessage;
+        const isQuotedImage = quotedMessage?.imageMessage;
+
+        if (!isDirectImage && !isQuotedImage) {
             return await sock.sendMessage(chatJid, { 
                 text: '❌ *خطأ:* يرجى إرسال صورة مع كتابة أمر *.ملصق* أو الرد على صورة موجودة مسبقاً!' 
             }, { quoted: msg });
@@ -19,15 +22,15 @@ export default {
         try {
             await sock.sendMessage(chatJid, { text: '⏳ *جاري تحويل الصورة إلى ملصق...*' }, { quoted: msg });
             
-            // جلب بيانات الصورة وتحميلها كـ Buffer
-            const targetMessage = msg.message?.imageMessage ? msg.message.imageMessage : msg.message.extendedTextMessage.contextInfo.quotedMessage.imageMessage;
+            // تحديد كائن الصورة الصحيح بناءً على طريقة الإرسال
+            const targetMessage = isDirectImage ? msg.message.imageMessage : quotedMessage.imageMessage;
+            
             const stream = await downloadContentFromMessage(targetMessage, 'image');
             let buffer = Buffer.from([]);
             for await (const chunk of stream) {
                 buffer = Buffer.concat([buffer, chunk]);
             }
 
-            // إرسال الملصق مباشرة إلى المحادثة
             await sock.sendMessage(chatJid, { sticker: buffer }, { quoted: msg });
 
         } catch (error) {
