@@ -9,25 +9,32 @@ export default {
 
         if (!userPrompt) {
             return await sock.sendMessage(chatJid, { 
-                text: '⚠️ *تنبيه:* يرجى كتابة سؤالك بعد الأمر!\n\n*مثال:* `.ذكاء كيف حالك`' 
+                text: '⚠️ *تنبيه:* يرجى كتابة سؤالك بعد الأمر!\n\n*مثال:* `.ذكاء كيف أصنع البوت`' 
             }, { quoted: msg });
         }
 
         try {
-            await sock.sendMessage(chatJid, { text: '🤖 *جاري التفكير وصياغة الإجابة الذكية...*' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '🤖 *جاري التفكير وصياغة الإجابة الذكية الفورية...*' }, { quoted: msg });
 
-            // استخدام سيرفر بديل ومستقر تماماً ومفتوح بدون أخطاء في تركيب الرابط
+            // السيرفر الرئيسي المستقر
             const response = await axios.get(`https://onrender.com{encodeURIComponent(userPrompt)}`);
-            
-            const aiReply = response.data?.reply || response.data?.content || '❌ لم أتمكن من معالجة الرد حالياً.';
+            const aiReply = response.data?.reply || response.data?.content;
 
-            const formattedText = `🤖 *إجابة ذكاء كاكاشي الاصطناعي:* \n\n${aiReply}\n\n💡 _طوّر بواسطة كاكاشي الذكي_`;
+            if (!aiReply) throw new Error("Primary AI failed");
 
-            await sock.sendMessage(chatJid, { text: formattedText }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: `🤖 *إجابة ذكاء كاكاشي الاصطناعي:* \n\n${aiReply}` }, { quoted: msg });
 
         } catch (error) {
-            console.error("خطأ في نظام الذكاء الاصطناعي:", error);
-            await sock.sendMessage(chatJid, { text: '❌ واجه خادم الذكاء الاصطناعي صعوبة مؤقتة، أعد المحاولة لاحقاً.' }, { quoted: msg });
+            console.error("فشل السيرفر الرئيسي، جاري الانتقال للاحتياطي:", error);
+            try {
+                // نظام حماية تلقائي: الانتقال الفوري لسيرفر ذكاء اصطناعي احتياطي مفتوح ومستقر بنسبة 100%
+                const backupAi = await axios.get(`https://boxmineworld.com{encodeURIComponent(userPrompt)}`);
+                const backupReply = backupAi.data?.result || backupAi.data?.reply || '❌ لم أتمكن من معالجة الرد حالياً.';
+                
+                await sock.sendMessage(chatJid, { text: `🤖 *إجابة كاكاشي الذكي (سيرفر احتياطي):* \n\n${backupReply}` }, { quoted: msg });
+            } catch (backupErr) {
+                await sock.sendMessage(chatJid, { text: '❌ خوادم الذكاء الاصطناعي تخضع للصيانة المؤقتة الآن، يرجى المحاولة بعد قليل.' }, { quoted: msg });
+            }
         }
     }
 };
