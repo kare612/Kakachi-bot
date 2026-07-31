@@ -1,56 +1,40 @@
 import axios from 'axios';
 
 export default {
-    command: ['صوت', 'اغنية', 'play', 'فيديو', 'فديو', 'video', 'mp4', 'mp3'],
-    category: 'download',
+    command: ['ذكاء', 'ai', 'بوت', 'gpt'],
+    category: 'ai',
     async default({ sock, msg, args }) {
         const chatJid = msg.key.remoteJid;
-        const videoUrl = args?.join(' ') || args;
+        const userPrompt = args?.join(' ') || args;
 
-        if (!videoUrl || !videoUrl.startsWith('http')) {
+        if (!userPrompt) {
             return await sock.sendMessage(chatJid, { 
-                text: '⚠️ *تنبيه:* يرجى وضع رابط صحيح بعد الأمر!\n\n*مثال:* `.صوت رابط_الفيديو`' 
+                text: '⚠️ *تنبيه:* يرجى كتابة سؤالك بعد الأمر!\n\n*مثال:* `.ذكاء كيف أصنع البوت`' 
             }, { quoted: msg });
         }
 
-        const userCommand = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-        const isVideoRequest = /فيديو|فديو|video|mp4/i.test(userCommand);
-
         try {
-            await sock.sendMessage(chatJid, { text: '⏳ *جاري المعالجة وسحب الملف من السيرفر المستقر...*' }, { quoted: msg });
+            await sock.sendMessage(chatJid, { text: '🤖 *جاري التفكير وصياغة الإجابة الذكية الفورية...*' }, { quoted: msg });
 
-            // استخدام API تحميل سريع ومفتوح ومخصص للبوتات لتفادي الحظر والأخطاء الداخلية
-            const apiUrl = `https://vreden.web.id{encodeURIComponent(videoUrl)}`;
-            const response = await axios.get(apiUrl);
-            
-            const downloadData = response.data?.result;
-            const targetMediaUrl = isVideoRequest ? downloadData?.video : downloadData?.audio;
+            // السيرفر الرئيسي المستقر
+            const response = await axios.get(`https://onrender.com{encodeURIComponent(userPrompt)}`);
+            const aiReply = response.data?.reply || response.data?.content;
 
-            if (!targetMediaUrl) throw new Error("Media URL not found");
+            if (!aiReply) throw new Error("Primary AI failed");
 
-            // جلب بافر الملف الصوتي أو المرئي
-            const mediaRes = await axios.get(targetMediaUrl, { responseType: 'arraybuffer' });
-            const mediaBuffer = Buffer.from(mediaRes.data, 'binary');
-
-            if (isVideoRequest) {
-                await sock.sendMessage(chatJid, { 
-                    video: mediaBuffer, 
-                    mimetype: 'video/mp4',
-                    caption: '✅ تم تحميل الفيديو بنجاح.'
-                }, { quoted: msg });
-            } else {
-                await sock.sendMessage(chatJid, { 
-                    audio: mediaBuffer, 
-                    mimetype: 'audio/mp4', 
-                    ptt: false 
-                }, { quoted: msg });
-            }
+            await sock.sendMessage(chatJid, { text: `🤖 *إجابة ذكاء كاكاشي الاصطناعي:* \n\n${aiReply}` }, { quoted: msg });
 
         } catch (error) {
-            console.error("خطأ أثناء معالجة التنزيل:", error);
-            await sock.sendMessage(chatJid, { 
-                text: '❌ *عذراً:* الرابط غير مدعوم حالياً أو السيرفر تحت الصيانة، جرب رابطاً آخر.' 
-            }, { quoted: msg });
+            console.error("فشل السيرفر الرئيسي، جاري الانتقال للاحتياطي:", error);
+            try {
+                // نظام حماية تلقائي: الانتقال الفوري لسيرفر ذكاء اصطناعي احتياطي مفتوح ومستقر بنسبة 100%
+                const backupAi = await axios.get(`https://boxmineworld.com{encodeURIComponent(userPrompt)}`);
+                const backupReply = backupAi.data?.result || backupAi.data?.reply || '❌ لم أتمكن من معالجة الرد حالياً.';
+                
+                await sock.sendMessage(chatJid, { text: `🤖 *إجابة كاكاشي الذكي (سيرفر احتياطي):* \n\n${backupReply}` }, { quoted: msg });
+            } catch (backupErr) {
+                await sock.sendMessage(chatJid, { text: '❌ خوادم الذكاء الاصطناعي تخضع للصيانة المؤقتة الآن، يرجى المحاولة بعد قليل.' }, { quoted: msg });
+            }
         }
     }
 };
