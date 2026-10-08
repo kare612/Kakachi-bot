@@ -24,13 +24,13 @@ async function startBot() {
 
     // 3. التحقق وطلب كود الربط الرقمي تلقائياً عند الحاجة
     if (!client.authState.creds.registered) {
-        // الرقم المراد ربطه بالبوت
-        const phoneNumber = '212784776925'; 
+        // الرقم الجديد المراد ربطه بالبوت
+        const phoneNumber = '212715469251'; 
         
         console.log(`[🔄] جاري تهيئة الاتصال لطلب كود الربط للرقم: ${phoneNumber}...`);
         
-        // تأخير برمي لمدة 4 ثوانٍ لضمان استقرار الـ WebSocket وتفادي فصل الخادم
-        await delay(4000); 
+        // تأخير برمي لمدة 5 ثوانٍ لضمان استقرار الـ WebSocket وتفادي فصل الخادم
+        await delay(5000); 
 
         try {
             let code = await client.requestPairingCode(phoneNumber);
@@ -40,7 +40,7 @@ async function startBot() {
             console.log(`🔑 كود الربط الرقمي الخاص بك هو: ${code}`);
             console.log(`======================================\n`);
         } catch (error) {
-            console.error('❌ فشل توليد كود الربط، يرجى مسح مجلد session المحترق وإعادة المحاولة:', error.message);
+            console.error('❌ فشل توليد كود الربط، يرجى مسح مجلد session وإعادة المحاولة:', error.message);
         }
     }
 
@@ -65,4 +65,3 @@ async function startBot() {
 }
 
 startBot();
-        
