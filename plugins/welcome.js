@@ -1,4 +1,4 @@
-// يمكنك استيراد مكتبات خارجية هنا إذا كنت بحاجة لها (مثال: axios)
+
 // import axios from 'axios';
 
 export default {
