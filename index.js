@@ -9,28 +9,27 @@ import fs from 'fs';
 import path from 'path';
 
 const phoneNumber = "212784776925";
-const pluginsFolder = './ايضافة'; // مجلد الإضافات والأوامر الخاص بك
-const commands = new Map(); // خريطة لحفظ الأوامر المقروءة ديناميكياً
+const pluginsFolder = './ايضافة'; 
+const commands = new Map(); 
 
-// دالة تفقد وقراءة جميع ملفات الأوامر داخل مجلد "ايضافة" تلقائياً
 async function loadPlugins() {
     if (!fs.existsSync(pluginsFolder)) {
         fs.mkdirSync(pluginsFolder);
     }
     
+    // تنظيف الخريطة قبل إعادة التحميل لمنع التكرار
+    commands.clear();
     const files = fs.readdirSync(pluginsFolder).filter(file => file.endsWith('.js'));
     console.log(`\n📂 جاري فحص مجلد [ايضافة]... تم العثور على (${files.length}) ملفات أوامر.`);
     
     for (const file of files) {
         try {
             const filePath = path.join(pluginsFolder, file);
-            // جلب الملف برمجياً باستخدام الـ Dynamic Import للموديلز
-            const plugin = await import(`./${filePath.replace(/\\/g, '/')}`);
+            const plugin = await import(`./${filePath.replace(/\\/g, '/')}?update=${Date.now()}`);
             
             if (plugin.default && plugin.default.command) {
-                // تسجيل كل كلمة مفتاحية موجودة بمصفوفة الـ command لترتبط بالدالة الافتراضية
                 plugin.default.command.forEach(cmd => {
-                    commands.set(cmd, plugin.default);
+                    commands.set(cmd.trim(), plugin.default);
                 });
                 console.log(` ✅ تم تحميل الإضافة بنجاح من الملف: [${file}]`);
             }
@@ -41,7 +40,6 @@ async function loadPlugins() {
 }
 
 async function startKakashiBot() {
-    // تحميل وقراءة الإضافات قبل بدء تشغيل سكايب الواتساب
     await loadPlugins();
 
     const { state, saveCreds } = await useMultiFileAuthState('./kakashi_session');
@@ -61,7 +59,6 @@ async function startKakashiBot() {
                 console.log(`\n⏳ جاري طلب كود الربط الرقمي للرقم: ${phoneNumber}...`);
                 let code = await sock.requestPairingCode(phoneNumber);
                 code = code?.match(/.{1,4}/g)?.join('-') || code;
-                
                 console.log('\n==================================================');
                 console.log(`🔑 كود ربط بوت كاكاشي الخاص بك هو: 【 ${code} 】`);
                 console.log('==================================================');
@@ -79,7 +76,7 @@ async function startKakashiBot() {
                 : true;
             if (shouldReconnect) startKakashiBot();
         } else if (connection === 'open') {
-            console.log('\n🚀 تم الاتصال بنجاح! مجلد [ايضافة] جاهز لاستقبال وتنفيذ أوامرك الحية ✅');
+            console.log('\n🚀 تم الاتصال بنجاح وبوت كاكاشي مستقر تماماً الآن! ✅');
         }
     });
 
@@ -87,7 +84,7 @@ async function startKakashiBot() {
 
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
-            const msg = chatUpdate.messages[0];
+            const msg = chatUpdate.messages[0]; // قراءة الرسالة الأولى مباشرة وبدقة
             if (!msg.message || msg.key.fromMe) return;
 
             const messageType = Object.keys(msg.message)[0];
@@ -105,16 +102,14 @@ async function startKakashiBot() {
                 return;
             }
 
-            // الفحص والتشغيل الذكي من الخريطة الديناميكية للأوامر
             if (cleanText.startsWith('.')) {
                 const parts = cleanText.slice(1).split(' ');
-                const commandName = parts[0]; // الأمر المدخل (مثل: الاوامر)
+                const commandName = parts[0].trim(); // استخراج الكلمة الأولى كأمر نصي فقط
                 const args = parts.slice(1);
 
-                // التحقق الفوري إذا كان الأمر مسجلاً داخل خريطة الإضافات المجلوبة
+                // مقارنة نصية صحيحة 100% مع خريطة المفاتيح المسجلة
                 if (commands.has(commandName)) {
                     const activePlugin = commands.get(commandName);
-                    // تنفيذ الدالة المقترنة بالأمر تلقائياً
                     await activePlugin.default({ sock, msg, args });
                 }
             }
@@ -125,4 +120,4 @@ async function startKakashiBot() {
 }
 
 startKakashiBot();
-            
+        
