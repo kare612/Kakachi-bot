@@ -1,26 +1,18 @@
+module.exports = {
+    name: 'الترحيب', // اسم الأمر الرئيسي
+    aliases: ['welcome', 'ترحيب'], // الاختصارات المستعارة
+    description: 'إرسال رسالة ترحيبية وتوضيحية للأعضاء الجدد',
 
-// import axios from 'axios';
+    async execute(sock, m, args, remoteJid) {
+        const welcomeMessage = `
+👋 *أهلاً وسهلاً بك في المجموعة!*
 
-export default {
-    // 1. الكلمات المفتاحية التي يستجيب لها هذا الأمر (اكتبها بدون النقطة)
-    command: ['فحص', 'تأكيد', 'test'],
-    
-    // 2. تصنيف الأمر (عام، مشرفين، مطور...)
-    category: 'user',
-    
-    // 3. الدالة الرئيسية التي يتم تشغيلها تلقائياً عند كتابة الأمر في الواتساب
-    async default({ sock, msg, args }) {
-        // تحديد رقم الشات المرسل منه (سواء مجموعة أو خاص)
-        const chatJid = msg.key.remoteJid;
-        
-        // نص الرد الذي ترغب بإرساله
-        const replyText = `🤖 *أهلاً بك يا مطور كاكاشي!* \n\nتم التعرف على ملف الأوامر الجديد داخل مجلد [ايضافة] بنجاح والأمر يعمل بنظام الـ APIs المطور.`;
+✨ يسعدنا انضمامك إلينا. يرجى قراءة القوانين لتجنب الطرد والمحافظة على نظام الروم.
 
-        try {
-            // إرسال الرسالة إلى المستخدم
-            await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
-        } catch (error) {
-            console.error("حدث خطأ أثناء تنفيذ الأمر الجديد:", error);
-        }
+🤖 لاستكشاف ميزات البوت والأوامر المتاحة، قم بكتابة:
+👉 *.منيو*
+`.trim();
+
+        await sock.sendMessage(remoteJid, { text: welcomeMessage }, { quoted: m });
     }
 };
