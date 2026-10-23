@@ -115,4 +115,4 @@ async function startKakashiBot() {
 
 // تشغيل البوت
 startKakashiBot()
-                
+            
