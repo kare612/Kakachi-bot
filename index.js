@@ -1,20 +1,25 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, Browsers } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const pino = require('pino')
 const fs = require('fs')
 const path = require('path')
+
+// 🟢 ضع رقم هاتفك هنا مسبوقاً برمز الدولة بدون علامة + (مثال للمغرب: 2126XXXXXXXX)
+const phoneNumber = "212784776925"
 
 // مصفوفة لتخزين الأوامر المحملة ديناميكياً
 const commands = new Map()
 
 // دالة تحميل الأوامر من مجلد الإضافات تلقائياً
 function loadCommands() {
+    commands.clear()
     const pluginsDir = path.join(__dirname, 'plugins')
     if (!fs.existsSync(pluginsDir)) fs.mkdirSync(pluginsDir)
 
     const files = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'))
     for (const file of files) {
         try {
+            delete require.cache[require.resolve(path.join(pluginsDir, file))]
             const command = require(path.join(pluginsDir, file))
             if (command.name && command.execute) {
                 commands.set(command.name, command)
@@ -36,25 +41,26 @@ async function startKakashiBot() {
     // تحميل الأوامر عند بدء التشغيل
     loadCommands()
 
-    // 2. إعدادات البوت الأساسية
+    // 2. إعدادات البوت الأساسية (تمت إضافة تعريف المتصفح لمنع حظر الاتصال)
     const sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // تعطيل الـ QR كود نهائياً
+        printQRInTerminal: false,
+        browser: Browsers.ubuntu('Chrome'),
         auth: state,
-        connectTimeoutMs: 60000, // زيادة وقت انتظار استجابة السيرفر لفك الحظر
-        defaultQueryTimeoutMs: 0
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000,
+        emitOwnEvents: true
     })
 
     // 3. طلب كود الربط النصي (Pairing Code) تلقائياً إذا لم تكن هناك جلسة مسجلة
     if (!sock.authState.creds.registered) {
-        const phoneNumber = "212784776925" 
-        
-        console.log('⏳ جاري تهيئة الاتصال والانتظار لفك حظر الخادم المؤقت (10 ثوانٍ)...')
-        await delay(10000) // انتظار 10 ثوانٍ كاملة لتجنب الخطأ 428 وتأمين الاتصال
+        console.log('⏳ جاري تهيئة الاتصال وطلب كود الربط (انتظر 5 ثوانٍ)...')
+        await delay(5000)
         
         try {
-            // طلب الكود من خوادم واتساب
-            let code = await sock.requestPairingCode(phoneNumber)
+            const cleanNumber = phoneNumber.replace(/[^0-9]/g, '')
+            let code = await sock.requestPairingCode(cleanNumber)
             code = code?.match(/.{1,4}/g)?.join('-') || code
             
             console.log('\n======================================')
@@ -62,8 +68,8 @@ async function startKakashiBot() {
             console.log('======================================\n')
             console.log('👉 افتح واتساب > الأجهزة المرتبطة > ربط جهاز > ربط باستخدام رقم الهاتف واكتب الكود أعلاه.')
         } catch (error) {
-            console.error('\n❌ فشل في طلب كود الربط بسبب قيود الخادم المتكررة.')
-            console.error('💡 الحل: يرجى تفعيل وضع الطيران في هاتفك لمدة 10 ثوانٍ لتغيير الـ IP ثم أعد المحاولة.\n')
+            console.error('\n❌ فشل في طلب كود الربط:', error.message)
+            console.error('💡 الحل: تأكد من الرقم، أو فعّل وضع الطيران 10 ثوانٍ ثم أعد التشغيل.\n')
         }
     }
 
@@ -74,11 +80,15 @@ async function startKakashiBot() {
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
-            console.log('🔄 تم إغلاق الاتصال، جاري إعادة الاتصال... ', shouldReconnect)
+            const statusCode = (lastDisconnect?.error instanceof Boom)?.output?.statusCode
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut
+            console.log(`🔄 تم إغلاق الاتصال (السبب: ${statusCode || 'غير معروف'})، جاري إعادة الاتصال...`, shouldReconnect)
+            
             if (shouldReconnect) {
-                await delay(5000) // انتظار 5 ثوانٍ قبل محاولة إعادة الاتصال لحماية الحساب
+                await delay(5000)
                 startKakashiBot()
+            } else {
+                console.log('⚠️ تم تسجيل الخروج! احذف مجلد session وأعد التشغيل لربط رقم جديد.')
             }
         } else if (connection === 'open') {
             console.log('✅ بنجاح! بوت كاكاشي متصل برقمك وشغال الآن.')
@@ -90,7 +100,7 @@ async function startKakashiBot() {
         try {
             const m = chatUpdate.messages[0]
             if (!m || !m.message) return
-            if (m.key.fromMe) return // تجاهل رسائل البوت نفسه
+            if (m.key.fromMe) return
 
             const remoteJid = m.key.remoteJid
             const messageContent = m.message.conversation || m.message.extendedTextMessage?.text || ''
@@ -115,4 +125,4 @@ async function startKakashiBot() {
 
 // تشغيل البوت
 startKakashiBot()
-            
+                
