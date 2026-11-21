@@ -11,15 +11,26 @@ module.exports = {
             return sock.sendMessage(remoteJid, { text: '❌ ضع رابط الفيديو بعد الأمر. مثال: `.ytmp4 https://youtu.be...`' }, { quoted: m });
         }
 
-        await sock.sendMessage(remoteJid, { text: '🎬 *جاري تحميل الفيديو مباشرة...*' }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: '🎬 *جاري تحميل الفيديو بجودة متوافقة مع واتساب...*' }, { quoted: m });
         const outVid = path.join(__dirname, `ytv_${Date.now()}.mp4`);
 
-        exec(`yt-dlp -f "best[ext=mp4][filesize<50M]/best[ext=mp4]" -o "${outVid}" "${link}"`, async (err) => {
-            if (err || !fs.existsSync(outVid)) {
-                return sock.sendMessage(remoteJid, { text: '❌ تعذر التحميل (تأكد من تثبيت yt-dlp أو أن حجم الفيديو أقل من 50MB).' }, { quoted: m });
-            }
+        // تحميل جودة 480p بصيغة mp4 متوافقة مع واتساب وبحجم خفيف
+        const cmd = `yt-dlp -f "best[height<=480][ext=mp4]/best[ext=mp4]" --max-filesize 25M -o "${outVid}" "${link}"`;
+
+        exec(cmd, async (err) => {
             try {
-                await sock.sendMessage(remoteJid, { video: fs.readFileSync(outVid), caption: '🌑 *تم التحميل بنجاح.*' }, { quoted: m });
+                if (err || !fs.existsSync(outVid)) {
+                    return await sock.sendMessage(remoteJid, { text: '❌ تعذر التحميل (الفيديو أطول من اللازم أو حجمه يتجاوز 25MB).' }, { quoted: m });
+                }
+
+                const videoBuffer = fs.readFileSync(outVid);
+                await sock.sendMessage(
+                    remoteJid,
+                    { video: videoBuffer, mimetype: 'video/mp4', caption: '🌑 *تم التحميل بنجاح.*' },
+                    { quoted: m }
+                );
+            } catch (uploadErr) {
+                await sock.sendMessage(remoteJid, { text: `❌ فشل رفع الفيديو لواتساب: ${uploadErr.message}` }, { quoted: m });
             } finally {
                 if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
             }
