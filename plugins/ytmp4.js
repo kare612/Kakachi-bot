@@ -4,14 +4,16 @@ module.exports = {
     async execute(sock, m, args, remoteJid) {
         const link = args.at(0);
         if (!link || !link.startsWith('http')) {
-            return sock.sendMessage(remoteJid, { text: '❌ ضع رابط الفيديو بعد الأمر. مثال: `.video https://youtu.be...`' }, { quoted: m });
+            return sock.sendMessage(remoteJid, { text: '❌ ضع رابط الفيديو بعد الأمر. مثال: `.ytmp4 https://youtu.be...`' }, { quoted: m });
         }
 
         await sock.sendMessage(remoteJid, { text: '🎬 *جاري سحب الفيديو...*' }, { quoted: m });
 
         try {
-            const url = 'https://siputzx.my.id' + encodeURIComponent(link);
-            const res = await fetch(url, {
+            const api = new URL('https://siputzx.my.id');
+            api.searchParams.set('url', link);
+
+            const res = await fetch(api.href, {
                 headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36' }
             });
             const json = await res.json();
@@ -29,4 +31,3 @@ module.exports = {
         }
     }
 };
-                
