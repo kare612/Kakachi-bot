@@ -6,11 +6,13 @@ module.exports = {
         if (!query) return sock.sendMessage(remoteJid, { text: '❌ اكتب الكلمة التي تبحث عنها. مثال: `.wiki المغرب`' }, { quoted: m });
 
         try {
-            const url = `https://wikipedia.org{encodeURIComponent(query)}`;
-            const res = await fetch(url);
+            const api = new URL('https://wikipedia.org' + encodeURIComponent(query));
+            const res = await fetch(api.href, {
+                headers: { 'User-Agent': 'KakashiBot/1.0' }
+            });
             const data = await res.json();
-            if (!data.extract) return sock.sendMessage(remoteJid, { text: '❌ لم يتم العثور على نتيجة في ويكيبيديا.' }, { quoted: m });
 
+            if (!data.extract) return sock.sendMessage(remoteJid, { text: '❌ لم يتم العثور على نتيجة في ويكيبيديا.' }, { quoted: m });
             await sock.sendMessage(remoteJid, { text: `📚 *نتائج ويكيبيديا حول (${data.title}):*\n\n${data.extract}` }, { quoted: m });
         } catch {
             await sock.sendMessage(remoteJid, { text: '❌ حدث خطأ أثناء البحث.' }, { quoted: m });
