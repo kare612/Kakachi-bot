@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage, S_WHATSAPP_NET } = require('@whiskeysockets/baileys');
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -35,9 +35,10 @@ module.exports = {
                     await sock.query({
                         tag: 'iq',
                         attrs: {
-                            to: remoteJid,
+                            to: S_WHATSAPP_NET || 's.whatsapp.net',
                             type: 'set',
-                            xmlns: 'w:profile:picture'
+                            xmlns: 'w:profile:picture',
+                            target: remoteJid
                         },
                         content: [
                             {
@@ -49,7 +50,7 @@ module.exports = {
                     });
                     await sock.sendMessage(remoteJid, { text: '🌑 *تم تغيير صورة المجموعة بنجاح!*' }, { quoted: m });
                 } catch (e) {
-                    await sock.sendMessage(remoteJid, { text: `❌ فشل التحديث: ${e.message}` }, { quoted: m });
+                    await sock.sendMessage(remoteJid, { text: `❌ رفض واتساب التغيير: ${e.message}` }, { quoted: m });
                 }
             });
         } catch (err) {
@@ -57,3 +58,4 @@ module.exports = {
         }
     }
 };
+                 
