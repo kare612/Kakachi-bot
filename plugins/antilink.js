@@ -5,7 +5,7 @@ module.exports = {
         if (!remoteJid.endsWith('@g.us')) return sock.sendMessage(remoteJid, { text: '❌ للمجموعات فقط.' }, { quoted: m });
 
         global.antiLinkGroups = global.antiLinkGroups || {};
-        const option = args?.toLowerCase();
+        const option = args.at(0)?.toLowerCase();
 
         if (option === 'on' || option === 'تفعيل') {
             global.antiLinkGroups[remoteJid] = true;
