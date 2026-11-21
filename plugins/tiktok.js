@@ -1,7 +1,3 @@
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
-
 module.exports = {
     name: 'tiktok',
     aliases: ['تيك_توك', 'tt'],
@@ -12,17 +8,24 @@ module.exports = {
         }
 
         await sock.sendMessage(remoteJid, { text: '🦇 *جاري سحب الفيديو من تيك توك...*' }, { quoted: m });
-        const outVid = path.join(__dirname, `tt_${Date.now()}.mp4`);
 
-        exec(`yt-dlp -f "mp4" -o "${outVid}" "${link}"`, async (err) => {
-            if (err || !fs.existsSync(outVid)) {
-                return sock.sendMessage(remoteJid, { text: '❌ تعذر تحميل الفيديو (تأكد من تثبيت yt-dlp في Termux).' }, { quoted: m });
-            }
-            try {
-                await sock.sendMessage(remoteJid, { video: fs.readFileSync(outVid), caption: '🌑 *تم التحميل بنجاح.*' }, { quoted: m });
-            } finally {
-                if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
-            }
-        });
+        try {
+            const url = 'https://tikwm.com' + encodeURIComponent(link);
+            const res = await fetch(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36' }
+            });
+            const json = await res.json();
+
+            if (!json?.data?.play) throw new Error('لم يتم العثور على الفيديو');
+            const videoUrl = json.data.play;
+
+            await sock.sendMessage(
+                remoteJid,
+                { video: { url: videoUrl }, caption: `🌑 *${json.data.title || 'تم التحميل من تيك توك'}*` },
+                { quoted: m }
+            );
+        } catch (err) {
+            await sock.sendMessage(remoteJid, { text: `❌ تعذر تحميل الفيديو: ${err.message}` }, { quoted: m });
+        }
     }
 };
