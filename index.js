@@ -104,7 +104,7 @@ async function startKakashiBot() {
 
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
-            const m = chatUpdate.messages
+            const m = chatUpdate.messages.at(0)
             if (!m || !m.message) return
             if (m.key.fromMe) return
 
@@ -135,7 +135,7 @@ async function startKakashiBot() {
                             : '🚫 *ممنوع إرسال الروابط في هذه المجموعة!*'
 
                         await sock.sendMessage(remoteJid, {
-                            text: `${reasonText}\n👤 @${sender.split('@')}`,
+                            text: `${reasonText}\n👤 @${sender.split('@').at(0)}`,
                             mentions: [sender]
                         })
                         await sock.groupParticipantsUpdate(remoteJid, [sender], 'remove')
@@ -163,4 +163,4 @@ async function startKakashiBot() {
 }
 
 startKakashiBot()
-                
+                    
