@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys')
 const pino = require('pino')
 const fs = require('fs')
 const path = require('path')
@@ -48,48 +48,54 @@ async function startKakashiBot() {
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: Browsers.macOS('Desktop'),
-        auth: state,
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+        },
+        syncFullHistory: false,
+        markOnlineOnConnect: false,
+        generateHighQualityLinkPreview: false,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000,
-        emitOwnEvents: true
+        keepAliveIntervalMs: 15000
     })
 
     sock.ev.on('creds.update', saveCreds)
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update
+        const { connection, lastDisconnect } = update
 
-        // طلب كود الربط بمجرد جاهزية قناة المصادقة (qr) دون طباعة QR
-        if (qr && !sock.authState.creds.registered && !pairingRequested) {
+        if (connection === 'connecting' && !sock.authState.creds.registered && !pairingRequested) {
             pairingRequested = true
-            console.log('⏳ جاري استخراج كود الربط من واتساب...')
-            try {
-                const cleanNumber = phoneNumber.replace(/[^0-9]/g, '')
-                let code = await sock.requestPairingCode(cleanNumber)
-                code = code?.match(/.{1,4}/g)?.join('-') || code
+            setTimeout(async () => {
+                try {
+                    const cleanNumber = phoneNumber.replace(/[^0-9]/g, '')
+                    let code = await sock.requestPairingCode(cleanNumber)
+                    code = code?.match(/.{1,4}/g)?.join('-') || code
 
-                console.log('\n======================================')
-                console.log(`🔥 كود ربط بوت كاكاشي الخاص بك هو: [ ${code} ]`)
-                console.log('======================================\n')
-                console.log('👉 افتح واتساب > الأجهزة المرتبطة > ربط جهاز > ربط باستخدام رقم الهاتف واكتب الكود أعلاه.')
-            } catch (error) {
-                console.error('\n❌ فشل في طلب كود الربط:', error.message)
-                console.error('💡 انتظر 10 دقائق ثم أعد المحاولة إذا تكرر الرفض من واتساب.')
-            }
+                    console.log('\n======================================')
+                    console.log(`🔥 كود ربط بوت كاكاشي الخاص بك هو: [ ${code} ]`)
+                    console.log('======================================\n')
+                    console.log('👉 افتح واتساب > الأجهزة المرتبطة > ربط جهاز > ربط باستخدام رقم الهاتف واكتب الكود أعلاه.')
+                } catch (error) {
+                    pairingRequested = false
+                    console.error('\n❌ تعذر طلب الكود حالياً:', error.message)
+                }
+            }, 3000)
         }
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode
+            const reason = lastDisconnect?.error?.message || 'غير معروف'
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut
-            console.log(`🔄 تم إغلاق الاتصال (الرمز: ${statusCode || '428'})، جاري إعادة المحاولة بعد 10 ثوانٍ...`)
+            console.log(`🔄 تم إغلاق الاتصال (الرمز: ${statusCode} - ${reason})، إعادة المحاولة بعد 8 ثوانٍ...`)
 
             if (shouldReconnect) {
-                await delay(10000)
+                await delay(8000)
                 startKakashiBot()
             } else {
-                console.log('⚠️ تم تسجيل الخروج! احذف مجلد session وأعد التشغيل لربط رقم جديد.')
+                console.log('⚠️ تم تسجيل الخروج! احذف مجلد session وأعد التشغيل.')
             }
         } else if (connection === 'open') {
             console.log('✅ بنجاح! بوت كاكاشي متصل برقمك وشغال الآن.')
@@ -98,7 +104,7 @@ async function startKakashiBot() {
 
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
-            const m = chatUpdate.messages[0]
+            const m = chatUpdate.messages
             if (!m || !m.message) return
             if (m.key.fromMe) return
 
@@ -129,7 +135,7 @@ async function startKakashiBot() {
                             : '🚫 *ممنوع إرسال الروابط في هذه المجموعة!*'
 
                         await sock.sendMessage(remoteJid, {
-                            text: `${reasonText}\n👤 @${sender.split('@')[0]}`,
+                            text: `${reasonText}\n👤 @${sender.split('@')}`,
                             mentions: [sender]
                         })
                         await sock.groupParticipantsUpdate(remoteJid, [sender], 'remove')
@@ -157,4 +163,4 @@ async function startKakashiBot() {
 }
 
 startKakashiBot()
-                             
+                
