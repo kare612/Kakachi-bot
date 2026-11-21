@@ -11,6 +11,13 @@ module.exports = {
             return sock.sendMessage(remoteJid, { text: '❌ للمجموعات فقط.' }, { quoted: m });
         }
 
+        // التحقق من هويتك ومعرفك الخاص (ID) كمطور
+        const sender = m.key.participant || m.key.participantAlt || remoteJid;
+        const isOwner = ['212715469251', '68531186057376'].some(id => sender.includes(id)) || m.key.fromMe;
+        if (!isOwner) {
+            return sock.sendMessage(remoteJid, { text: '⛔ هذا الأمر للمطور فقط.' }, { quoted: m });
+        }
+
         const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const targetMsg = quoted ? { message: quoted } : m;
 
@@ -48,9 +55,9 @@ module.exports = {
                             }
                         ]
                     });
-                    await sock.sendMessage(remoteJid, { text: '🌑 *تم تغيير صورة المجموعة بنجاح!*' }, { quoted: m });
+                    await sock.sendMessage(remoteJid, { text: '🌑 *تم تغيير صورة المجموعة بنجاح بأمر المطور!*' }, { quoted: m });
                 } catch (e) {
-                    await sock.sendMessage(remoteJid, { text: `❌ رفض واتساب التغيير: ${e.message}` }, { quoted: m });
+                    await sock.sendMessage(remoteJid, { text: `❌ خطأ تقني من الخادم: ${e.message}` }, { quoted: m });
                 }
             });
         } catch (err) {
@@ -58,4 +65,4 @@ module.exports = {
         }
     }
 };
-                 
+                
