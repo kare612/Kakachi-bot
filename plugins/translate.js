@@ -15,11 +15,9 @@ module.exports = {
         }
 
         try {
-            const protocol = 'https:' + '//';
-            const host = '://googleapis.com';
-            const params = '?client=gtx&sl=auto&tl=ar&dt=t&q=' + encodeURIComponent(text);
+            const url = 'https://googleapis.com' + encodeURIComponent(text);
 
-            const res = await fetch(protocol + host + params, {
+            const res = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
                 }
