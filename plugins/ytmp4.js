@@ -1,3 +1,7 @@
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
 module.exports = {
     name: 'ytmp4',
     aliases: ['video', 'فيديو'],
@@ -7,27 +11,18 @@ module.exports = {
             return sock.sendMessage(remoteJid, { text: '❌ ضع رابط الفيديو بعد الأمر. مثال: `.ytmp4 https://youtu.be...`' }, { quoted: m });
         }
 
-        await sock.sendMessage(remoteJid, { text: '🎬 *جاري سحب الفيديو...*' }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: '🎬 *جاري تحميل الفيديو مباشرة...*' }, { quoted: m });
+        const outVid = path.join(__dirname, `ytv_${Date.now()}.mp4`);
 
-        try {
-            const api = new URL('https://siputzx.my.id');
-            api.searchParams.set('url', link);
-
-            const res = await fetch(api.href, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36' }
-            });
-            const json = await res.json();
-
-            const videoUrl = json?.data?.dl || json?.data?.url;
-            if (!videoUrl) throw new Error('لم يتم العثور على رابط مباشر للفيديو');
-
-            await sock.sendMessage(
-                remoteJid,
-                { video: { url: videoUrl }, caption: `🌑 *${json?.data?.title || 'تم التحميل بنجاح'}*` },
-                { quoted: m }
-            );
-        } catch (err) {
-            await sock.sendMessage(remoteJid, { text: `❌ تعذر تحميل الفيديو: ${err.message}` }, { quoted: m });
-        }
+        exec(`yt-dlp -f "best[ext=mp4][filesize<50M]/best[ext=mp4]" -o "${outVid}" "${link}"`, async (err) => {
+            if (err || !fs.existsSync(outVid)) {
+                return sock.sendMessage(remoteJid, { text: '❌ تعذر التحميل (تأكد من تثبيت yt-dlp أو أن حجم الفيديو أقل من 50MB).' }, { quoted: m });
+            }
+            try {
+                await sock.sendMessage(remoteJid, { video: fs.readFileSync(outVid), caption: '🌑 *تم التحميل بنجاح.*' }, { quoted: m });
+            } finally {
+                if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
+            }
+        });
     }
 };
