@@ -1,14 +1,22 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, Browsers } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const pino = require('pino')
 const fs = require('fs')
 const path = require('path')
 
-// 🟢 ضع رقم هاتفك هنا مسبوقاً برمز الدولة بدون علامة + (مثال للمغرب: 2126XXXXXXXX)
+// رقم هاتف البوت
 const phoneNumber = "212784776925"
+
+// أرقام ومعرفات المطور المستثناة من الحظر والحماية
+const OWNER_IDS = ['212715469251', '68531186057376']
 
 // مصفوفة لتخزين الأوامر المحملة ديناميكياً
 const commands = new Map()
+
+// تهيئة إعدادات الحماية والوضع العام
+global.antiLinkGroups = global.antiLinkGroups || {}
+global.antiContactGroups = global.antiContactGroups || {}
+global.botMode = global.botMode || 'public'
 
 // دالة تحميل الأوامر من مجلد الإضافات تلقائياً
 function loadCommands() {
@@ -35,17 +43,19 @@ function loadCommands() {
 }
 
 async function startKakashiBot() {
-    // 1. تحديد مجلد حفظ الجلسة
+    // 1. تحديد مجلد حفظ الجلسة وجلب أحدث إصدار بروتوكول واتساب
     const { state, saveCreds } = await useMultiFileAuthState('session')
+    const { version } = await fetchLatestBaileysVersion()
 
     // تحميل الأوامر عند بدء التشغيل
     loadCommands()
 
-    // 2. إعدادات البوت الأساسية (تمت إضافة تعريف المتصفح لمنع حظر الاتصال)
+    // 2. إعدادات البوت الأساسية
     const sock = makeWASocket({
+        version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
+        browser: Browsers.macOS('Desktop'),
         auth: state,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
@@ -95,7 +105,7 @@ async function startKakashiBot() {
         }
     })
 
-    // معالجة الرسائل الواردة وتمريرها للمجلد المستهدف
+    // معالجة الرسائل الواردة والحماية وتمرير الأوامر للمجلد المستهدف
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
             const m = chatUpdate.messages[0]
@@ -103,9 +113,45 @@ async function startKakashiBot() {
             if (m.key.fromMe) return
 
             const remoteJid = m.key.remoteJid
-            const messageContent = m.message.conversation || m.message.extendedTextMessage?.text || ''
-            
-            // تحديد رمز الأمر الافتراضي المعتمد للبوت (البادئة)
+            const isGroup = remoteJid.endsWith('@g.us')
+            const sender = m.key.participant || m.key.participantAlt || remoteJid
+            const isOwner = OWNER_IDS.some(id => sender.includes(id))
+
+            const messageContent = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
+
+            // 🛡️ أولاً: نظام الحماية الفورية للمجموعات (يعمل على كل الرسائل حتى بدون نقطة)
+            if (isGroup && !isOwner) {
+                const isContact = Boolean(m.message?.contactMessage || m.message?.contactsArrayMessage)
+                const hasPhoneNumber = /(?:\+|00)[1-9][0-9 \-().]{7,18}/.test(messageContent)
+                const hasLink = /(https?:\/\/[^\s]+|chat\.whatsapp\.com\/[^\s]+|wa\.me\/[^\s]+)/i.test(messageContent)
+
+                const triggerContact = global.antiContactGroups[remoteJid] && (isContact || hasPhoneNumber)
+                const triggerLink = global.antiLinkGroups[remoteJid] && hasLink
+
+                if (triggerContact || triggerLink) {
+                    const groupMeta = await sock.groupMetadata(remoteJid)
+                    const isAdmin = groupMeta.participants.find(p => p.id === sender)?.admin
+
+                    if (!isAdmin) {
+                        await sock.sendMessage(remoteJid, { delete: m.key })
+                        const reasonText = triggerContact
+                            ? '🚫 *ممنوع إرسال جهات الاتصال أو الأرقام في هذه المجموعة!*'
+                            : '🚫 *ممنوع إرسال الروابط في هذه المجموعة!*'
+
+                        await sock.sendMessage(remoteJid, {
+                            text: `${reasonText}\n👤 @${sender.split('@')[0]}`,
+                            mentions: [sender]
+                        })
+                        await sock.groupParticipantsUpdate(remoteJid, [sender], 'remove')
+                        return
+                    }
+                }
+            }
+
+            // 🔒 ثانياً: التحقق من الوضع الخاص (Private Mode)
+            if (global.botMode === 'private' && !isOwner) return
+
+            // ⚡ ثالثاً: معالجة الأوامر التي تبدأ بالبادئة ( . )
             const prefix = '.' 
             if (!messageContent.startsWith(prefix)) return
 
@@ -125,4 +171,3 @@ async function startKakashiBot() {
 
 // تشغيل البوت
 startKakashiBot()
-                
