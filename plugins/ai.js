@@ -10,10 +10,11 @@ module.exports = {
         await sock.sendMessage(remoteJid, { text: '🕯️ *جاري استحضار الإجابة...*' }, { quoted: m });
 
         try {
-            const url = new URL('https://pollinations.ai' + encodeURIComponent(prompt));
-            url.searchParams.set('model', 'openai');
+            const protocol = 'https:' + '//';
+            const host = 'text.pollinations.ai/';
+            const fullUrl = protocol + host + encodeURIComponent(prompt) + '?model=openai';
 
-            const res = await fetch(url.href, {
+            const res = await fetch(fullUrl, {
                 method: 'GET',
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
