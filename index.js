@@ -10,15 +10,11 @@ const phoneNumber = "212784776925"
 // أرقام ومعرفات المطور المستثناة من الحظر والحماية
 const OWNER_IDS = ['212715469251', '68531186057376']
 
-// مصفوفة لتخزين الأوامر المحملة ديناميكياً
 const commands = new Map()
-
-// تهيئة إعدادات الحماية والوضع العام
 global.antiLinkGroups = global.antiLinkGroups || {}
 global.antiContactGroups = global.antiContactGroups || {}
 global.botMode = global.botMode || 'public'
 
-// دالة تحميل الأوامر من مجلد الإضافات تلقائياً
 function loadCommands() {
     commands.clear()
     const pluginsDir = path.join(__dirname, 'plugins')
@@ -43,19 +39,17 @@ function loadCommands() {
 }
 
 async function startKakashiBot() {
-    // 1. تحديد مجلد حفظ الجلسة وجلب أحدث إصدار بروتوكول واتساب
     const { state, saveCreds } = await useMultiFileAuthState('session')
     const { version } = await fetchLatestBaileysVersion()
+    let pairingRequested = false
 
-    // تحميل الأوامر عند بدء التشغيل
     loadCommands()
 
-    // 2. إعدادات البوت الأساسية
     const sock = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        browser: Browsers.macOS('Desktop'),
+        browser: Browsers.ubuntu('Chrome'),
         auth: state,
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
@@ -63,37 +57,36 @@ async function startKakashiBot() {
         emitOwnEvents: true
     })
 
-    // 3. طلب كود الربط النصي (Pairing Code) تلقائياً إذا لم تكن هناك جلسة مسجلة
-    if (!sock.authState.creds.registered) {
-        console.log('⏳ جاري تهيئة الاتصال وطلب كود الربط (انتظر 5 ثوانٍ)...')
-        await delay(5000)
-        
-        try {
-            const cleanNumber = phoneNumber.replace(/[^0-9]/g, '')
-            let code = await sock.requestPairingCode(cleanNumber)
-            code = code?.match(/.{1,4}/g)?.join('-') || code
-            
-            console.log('\n======================================')
-            console.log(`🔥 كود ربط بوت كاكاشي الخاص بك هو: [ ${code} ]`)
-            console.log('======================================\n')
-            console.log('👉 افتح واتساب > الأجهزة المرتبطة > ربط جهاز > ربط باستخدام رقم الهاتف واكتب الكود أعلاه.')
-        } catch (error) {
-            console.error('\n❌ فشل في طلب كود الربط:', error.message)
-            console.error('💡 الحل: تأكد من الرقم، أو فعّل وضع الطيران 10 ثوانٍ ثم أعد التشغيل.\n')
-        }
-    }
-
-    // حفظ التغييرات في الجلسة تلقائياً
     sock.ev.on('creds.update', saveCreds)
 
-    // مراقبة حالة الاتصال وإعادة التوصيل التلقائي عند انقطاع السيرفر
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update
+
+        // طلب كود الربط في اللحظة الصحيحة لبدء الاتصال
+        if (connection === 'connecting' && !sock.authState.creds.registered && !pairingRequested) {
+            pairingRequested = true
+            console.log('⏳ جاري طلب كود الربط من خوادم واتساب (انتظر 6 ثوانٍ)...')
+            await delay(6000)
+            try {
+                const cleanNumber = phoneNumber.replace(/[^0-9]/g, '')
+                let code = await sock.requestPairingCode(cleanNumber)
+                code = code?.match(/.{1,4}/g)?.join('-') || code
+
+                console.log('\n======================================')
+                console.log(`🔥 كود ربط بوت كاكاشي الخاص بك هو: [ ${code} ]`)
+                console.log('======================================\n')
+                console.log('👉 افتح واتساب > الأجهزة المرتبطة > ربط جهاز > ربط باستخدام رقم الهاتف واكتب الكود أعلاه.')
+            } catch (error) {
+                pairingRequested = false
+                console.error('\n❌ فشل في طلب كود الربط:', error.message)
+            }
+        }
+
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error instanceof Boom)?.output?.statusCode
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut
-            console.log(`🔄 تم إغلاق الاتصال (السبب: ${statusCode || 'غير معروف'})، جاري إعادة الاتصال...`, shouldReconnect)
-            
+            console.log(`🔄 تم إغلاق الاتصال (السبب: ${statusCode || 'غير معروف'})، جاري إعادة الاتصال...`)
+
             if (shouldReconnect) {
                 await delay(5000)
                 startKakashiBot()
@@ -105,10 +98,9 @@ async function startKakashiBot() {
         }
     })
 
-    // معالجة الرسائل الواردة والحماية وتمرير الأوامر للمجلد المستهدف
     sock.ev.on('messages.upsert', async chatUpdate => {
         try {
-            const m = chatUpdate.messages[0]
+            const m = chatUpdate.messages
             if (!m || !m.message) return
             if (m.key.fromMe) return
 
@@ -119,7 +111,7 @@ async function startKakashiBot() {
 
             const messageContent = m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || m.message.videoMessage?.caption || ''
 
-            // 🛡️ أولاً: نظام الحماية الفورية للمجموعات (يعمل على كل الرسائل حتى بدون نقطة)
+            // 🛡️ حماية المجموعات: منع جهات الاتصال والأرقام والروابط
             if (isGroup && !isOwner) {
                 const isContact = Boolean(m.message?.contactMessage || m.message?.contactsArrayMessage)
                 const hasPhoneNumber = /(?:\+|00)[1-9][0-9 \-().]{7,18}/.test(messageContent)
@@ -139,7 +131,7 @@ async function startKakashiBot() {
                             : '🚫 *ممنوع إرسال الروابط في هذه المجموعة!*'
 
                         await sock.sendMessage(remoteJid, {
-                            text: `${reasonText}\n👤 @${sender.split('@')[0]}`,
+                            text: `${reasonText}\n👤 @${sender.split('@')}`,
                             mentions: [sender]
                         })
                         await sock.groupParticipantsUpdate(remoteJid, [sender], 'remove')
@@ -148,17 +140,14 @@ async function startKakashiBot() {
                 }
             }
 
-            // 🔒 ثانياً: التحقق من الوضع الخاص (Private Mode)
             if (global.botMode === 'private' && !isOwner) return
 
-            // ⚡ ثالثاً: معالجة الأوامر التي تبدأ بالبادئة ( . )
-            const prefix = '.' 
+            const prefix = '.'
             if (!messageContent.startsWith(prefix)) return
 
             const args = messageContent.slice(prefix.length).trim().split(/ +/)
             const commandName = args.shift().toLowerCase()
 
-            // البحث عن الأمر من مجلد الإضافات وتشغيله
             const command = commands.get(commandName)
             if (command) {
                 await command.execute(sock, m, args, remoteJid)
@@ -169,5 +158,5 @@ async function startKakashiBot() {
     })
 }
 
-// تشغيل البوت
 startKakashiBot()
+                            
