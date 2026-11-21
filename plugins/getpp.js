@@ -26,22 +26,34 @@ module.exports = {
 
             fs.writeFileSync(inImg, buffer);
 
-            exec(`ffmpeg -y -i "${inImg}" -vf "scale=640:640:force_original_aspect_ratio=increase,crop=640:640" "${outImg}"`, async (err) => {
+            exec(`ffmpeg -y -i "${inImg}" -vf "scale=640:640:force_original_aspect_ratio=increase,crop=640:640" -q:v 2 "${outImg}"`, async (err) => {
                 if (fs.existsSync(inImg)) fs.unlinkSync(inImg);
-                const imgPath = (!err && fs.existsSync(outImg)) ? outImg : inImg;
+                const finalBuffer = (!err && fs.existsSync(outImg)) ? fs.readFileSync(outImg) : buffer;
+                if (fs.existsSync(outImg)) fs.unlinkSync(outImg);
 
                 try {
-                    await sock.updateProfilePicture(remoteJid, { url: imgPath });
-                    await sock.sendMessage(remoteJid, { text: '🌑 *تم تحديث صورة المجموعة بنجاح.*' }, { quoted: m });
+                    await sock.query({
+                        tag: 'iq',
+                        attrs: {
+                            to: remoteJid,
+                            type: 'set',
+                            xmlns: 'w:profile:picture'
+                        },
+                        content: [
+                            {
+                                tag: 'picture',
+                                attrs: { type: 'image' },
+                                content: finalBuffer
+                            }
+                        ]
+                    });
+                    await sock.sendMessage(remoteJid, { text: '🌑 *تم تغيير صورة المجموعة بنجاح!*' }, { quoted: m });
                 } catch (e) {
-                    await sock.sendMessage(remoteJid, { text: `❌ خطأ واتساب: ${e.message}` }, { quoted: m });
-                } finally {
-                    if (fs.existsSync(outImg)) fs.unlinkSync(outImg);
+                    await sock.sendMessage(remoteJid, { text: `❌ فشل التحديث: ${e.message}` }, { quoted: m });
                 }
             });
         } catch (err) {
-            await sock.sendMessage(remoteJid, { text: `❌ خطأ التحميل: ${err.message}` }, { quoted: m });
+            await sock.sendMessage(remoteJid, { text: `❌ خطأ: ${err.message}` }, { quoted: m });
         }
     }
 };
-                
