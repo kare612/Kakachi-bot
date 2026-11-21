@@ -1,0 +1,34 @@
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+module.exports = {
+    name: 'grey',
+    aliases: ['رمادي', 'ابيض_واسود'],
+    async execute(sock, m, args, remoteJid) {
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const targetMsg = quoted ? { message: quoted } : m;
+        if (!targetMsg.message?.imageMessage) {
+            return sock.sendMessage(remoteJid, { text: '❌ أرسل صورة أو رد عليها بالأمر `.grey`' }, { quoted: m });
+        }
+
+        try {
+            const buffer = await downloadMediaMessage(targetMsg, 'buffer', {});
+            const id = Date.now();
+            const inImg = path.join(__dirname, `grey_in_${id}.jpg`);
+            const outImg = path.join(__dirname, `grey_out_${id}.jpg`);
+
+            fs.writeFileSync(inImg, buffer);
+            exec(`ffmpeg -y -i "${inImg}" -vf "format=gray" "${outImg}"`, async (err) => {
+                if (fs.existsSync(inImg)) fs.unlinkSync(inImg);
+                if (err || !fs.existsSync(outImg)) return sock.sendMessage(remoteJid, { text: '❌ فشل تحويل الصورة.' }, { quoted: m });
+
+                await sock.sendMessage(remoteJid, { image: fs.readFileSync(outImg), caption: '🖤 *تم تجريد الصورة من الألوان.*' }, { quoted: m });
+                fs.unlinkSync(outImg);
+            });
+        } catch {
+            await sock.sendMessage(remoteJid, { text: '❌ حدث خطأ أثناء معالجة الصورة.' }, { quoted: m });
+        }
+    }
+};
