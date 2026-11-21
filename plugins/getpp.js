@@ -1,13 +1,45 @@
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
 module.exports = {
-    name: 'getpp',
-    aliases: ['بروفايل', 'صورة'],
+    name: 'setpp',
+    aliases: ['صورة_المجموعة', 'تغيير_الصورة'],
     async execute(sock, m, args, remoteJid) {
-        const target = m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || m.message?.extendedTextMessage?.contextInfo?.participant || (m.key.participant || remoteJid);
+        if (!remoteJid.endsWith('@g.us')) {
+            return sock.sendMessage(remoteJid, { text: '❌ للمجموعات فقط.' }, { quoted: m });
+        }
+
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const targetMsg = quoted ? { message: quoted } : m;
+
+        if (!targetMsg.message?.imageMessage) {
+            return sock.sendMessage(remoteJid, { text: '❌ أرسل صورة أو رد عليها بالأمر `.setpp`' }, { quoted: m });
+        }
+
         try {
-            const ppUrl = await sock.profilePictureUrl(target, 'image');
-            await sock.sendMessage(remoteJid, { image: { url: ppUrl }, caption: `👁️ *تم استخراج صورة الروح.*` }, { quoted: m });
-        } catch {
-            await sock.sendMessage(remoteJid, { text: '❌ لا يمكن جلب الصورة (الخصوصية مفعلة أو لا توجد صورة).' }, { quoted: m });
+            const buffer = await downloadMediaMessage(targetMsg, 'buffer', {});
+            const id = Date.now();
+            const inImg = path.join(__dirname, `pp_in_${id}.jpg`);
+            const outImg = path.join(__dirname, `pp_out_${id}.jpg`);
+
+            fs.writeFileSync(inImg, buffer);
+
+            exec(`ffmpeg -y -i "${inImg}" -vf "scale=640:640:force_original_aspect_ratio=increase,crop=640:640" "${outImg}"`, async (err) => {
+                if (fs.existsSync(inImg)) fs.unlinkSync(inImg);
+                const finalBuffer = (!err && fs.existsSync(outImg)) ? fs.readFileSync(outImg) : buffer;
+                if (fs.existsSync(outImg)) fs.unlinkSync(outImg);
+
+                try {
+                    await sock.updateProfilePicture(remoteJid, finalBuffer);
+                    await sock.sendMessage(remoteJid, { text: '🌑 *تم تحديث صورة المجموعة بنجاح.*' }, { quoted: m });
+                } catch (e) {
+                    await sock.sendMessage(remoteJid, { text: `❌ تعذر تغيير الصورة: ${e.message}` }, { quoted: m });
+                }
+            });
+        } catch (err) {
+            await sock.sendMessage(remoteJid, { text: `❌ خطأ في تحميل الصورة: ${err.message}` }, { quoted: m });
         }
     }
 };
