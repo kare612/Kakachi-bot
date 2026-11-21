@@ -28,18 +28,20 @@ module.exports = {
 
             exec(`ffmpeg -y -i "${inImg}" -vf "scale=640:640:force_original_aspect_ratio=increase,crop=640:640" "${outImg}"`, async (err) => {
                 if (fs.existsSync(inImg)) fs.unlinkSync(inImg);
-                const finalBuffer = (!err && fs.existsSync(outImg)) ? fs.readFileSync(outImg) : buffer;
-                if (fs.existsSync(outImg)) fs.unlinkSync(outImg);
+                const imgPath = (!err && fs.existsSync(outImg)) ? outImg : inImg;
 
                 try {
-                    await sock.updateProfilePicture(remoteJid, finalBuffer);
+                    await sock.updateProfilePicture(remoteJid, { url: imgPath });
                     await sock.sendMessage(remoteJid, { text: '🌑 *تم تحديث صورة المجموعة بنجاح.*' }, { quoted: m });
                 } catch (e) {
-                    await sock.sendMessage(remoteJid, { text: `❌ تعذر تغيير الصورة: ${e.message}` }, { quoted: m });
+                    await sock.sendMessage(remoteJid, { text: `❌ خطأ واتساب: ${e.message}` }, { quoted: m });
+                } finally {
+                    if (fs.existsSync(outImg)) fs.unlinkSync(outImg);
                 }
             });
         } catch (err) {
-            await sock.sendMessage(remoteJid, { text: `❌ خطأ في تحميل الصورة: ${err.message}` }, { quoted: m });
+            await sock.sendMessage(remoteJid, { text: `❌ خطأ التحميل: ${err.message}` }, { quoted: m });
         }
     }
 };
+                
