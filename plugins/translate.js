@@ -2,24 +2,44 @@ module.exports = {
     name: 'translate',
     aliases: ['ترجمة', 'ترجم', 'tr'],
     async execute(sock, m, args, remoteJid) {
-        const quotedText = m.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || m.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text;
+        const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        const quotedText = quoted?.conversation || quoted?.extendedTextMessage?.text || '';
         const text = args.join(' ') || quotedText;
-        if (!text) return sock.sendMessage(remoteJid, { text: '❌ اكتب النص لترجمته أو رد على رسالة أجنبية.' }, { quoted: m });
+
+        if (!text) {
+            return sock.sendMessage(
+                remoteJid,
+                { text: '❌ اكتب النص لترجمته أو رد على رسالة بالأمر `.ترجمة`' },
+                { quoted: m }
+            );
+        }
 
         try {
-            const url = new URL('https://googleapis.com');
-            url.searchParams.set('client', 'gtx');
-            url.searchParams.set('sl', 'auto');
-            url.searchParams.set('tl', 'ar');
-            url.searchParams.set('dt', 't');
-            url.searchParams.set('q', text);
+            const protocol = 'https:' + '//';
+            const host = '://googleapis.com';
+            const params = '?client=gtx&sl=auto&tl=ar&dt=t&q=' + encodeURIComponent(text);
 
-            const res = await fetch(url.href);
+            const res = await fetch(protocol + host + params, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
+                }
+            });
+
+            if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             const translated = data[0].map(item => item[0]).join('');
-            await sock.sendMessage(remoteJid, { text: `🌐 *الترجمة:*\n\n${translated}` }, { quoted: m });
-        } catch {
-            await sock.sendMessage(remoteJid, { text: '❌ فشل في ترجمة النص.' }, { quoted: m });
+
+            await sock.sendMessage(
+                remoteJid,
+                { text: `🌐 *الترجمة إلى العربية:*\n\n${translated}` },
+                { quoted: m }
+            );
+        } catch (err) {
+            await sock.sendMessage(
+                remoteJid,
+                { text: `❌ تعذر ترجمة النص حالياً (${err.message}).` },
+                { quoted: m }
+            );
         }
     }
 };
