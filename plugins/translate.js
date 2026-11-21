@@ -15,21 +15,22 @@ module.exports = {
         }
 
         try {
-            const url = 'https://googleapis.com' + encodeURIComponent(text);
+            const prompt = 'ترجم النص التالي إلى اللغة العربية بدقة وبدون أي مقدمات أو شرح إضافي: ' + text;
+            const url = 'https://pollinations.ai' + encodeURIComponent(prompt) + '?model=openai';
 
             const res = await fetch(url, {
+                method: 'GET',
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
                 }
             });
 
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            const translated = data[0].map(item => item[0]).join('');
+            const translated = await res.text();
 
             await sock.sendMessage(
                 remoteJid,
-                { text: `🌐 *الترجمة إلى العربية:*\n\n${translated}` },
+                { text: `🌐 *الترجمة:*\n\n${translated}` },
                 { quoted: m }
             );
         } catch (err) {
