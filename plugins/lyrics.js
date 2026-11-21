@@ -6,16 +6,12 @@ module.exports = {
         if (!query) return sock.sendMessage(remoteJid, { text: '❌ اكتب اسم الأغنية. مثال: `.lyrics Believer`' }, { quoted: m });
 
         try {
-            const url = 'https://some-random-api.com' + encodeURIComponent(query);
-            const res = await fetch(url);
+            const api = new URL('https://lyrics.ovh' + encodeURIComponent(query) + '/' + encodeURIComponent(query));
+            const res = await fetch(api.href);
             const data = await res.json();
 
             if (!data.lyrics) return sock.sendMessage(remoteJid, { text: '❌ لم يتم العثور على كلمات لهذه الأغنية.' }, { quoted: m });
-            await sock.sendMessage(
-                remoteJid,
-                { text: `🎵 *${data.title}* - ${data.author}\n\n${data.lyrics}` },
-                { quoted: m }
-            );
+            await sock.sendMessage(remoteJid, { text: `🎵 *كلمات الأغنية:*\n\n${data.lyrics}` }, { quoted: m });
         } catch {
             await sock.sendMessage(remoteJid, { text: '❌ تعذر جلب الكلمات حالياً.' }, { quoted: m });
         }
