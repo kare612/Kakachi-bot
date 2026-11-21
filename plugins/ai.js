@@ -10,19 +10,14 @@ module.exports = {
         await sock.sendMessage(remoteJid, { text: '🕯️ *جاري استحضار الإجابة...*' }, { quoted: m });
 
         try {
-            const res = await fetch('https://pollinations.ai', {
-                method: 'POST',
+            const url = new URL('https://pollinations.ai' + encodeURIComponent(prompt));
+            url.searchParams.set('model', 'openai');
+
+            const res = await fetch(url.href, {
+                method: 'GET',
                 headers: {
-                    'Content-Type': 'application/json',
                     'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36'
-                },
-                body: JSON.stringify({
-                    messages: [
-                        { role: 'system', content: 'أنت مساعد ذكي وغامض تتحدث العربية بطلاقة واختصار.' },
-                        { role: 'user', content: prompt }
-                    ],
-                    model: 'openai'
-                })
+                }
             });
 
             if (!res.ok) throw new Error('HTTP ' + res.status);
