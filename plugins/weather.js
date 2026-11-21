@@ -6,10 +6,15 @@ module.exports = {
         if (!city) return sock.sendMessage(remoteJid, { text: '❌ اكتب اسم المدينة بعد الأمر. مثال: `.طقس الناظور`' }, { quoted: m });
 
         try {
-            const res = await fetch(`https://wttr.in{encodeURIComponent(city)}?format=j1&lang=ar`);
+            const api = new URL('https://wttr.in' + encodeURIComponent(city));
+            api.searchParams.set('format', 'j1');
+            api.searchParams.set('lang', 'ar');
+
+            const res = await fetch(api.href);
             const data = await res.json();
-            const current = data.current_condition[0];
-            const desc = current.lang_ar?.[0]?.value || current.weatherDesc[0].value;
+            const current = data.current_condition.at(0);
+            const desc = current.lang_ar?.at(0)?.value || current.weatherDesc.at(0).value;
+
             const text = `🌦️ *حالة الطقس في (${city}):*\n\n` +
                          `🌡️ *الحرارة:* ${current.temp_C}°C\n` +
                          `☁️ *الحالة:* ${desc}\n` +
