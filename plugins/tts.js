@@ -6,21 +6,22 @@ module.exports = {
         if (!text) return sock.sendMessage(remoteJid, { text: '❌ اكتب النص الذي تريد تحويله إلى صوت.' }, { quoted: m });
 
         try {
-            const lang = /[\u0600-\u06FF]/.test(text) ? 'ar' : 'en';
-            const url = new URL('https://google.com');
-            url.searchParams.set('ie', 'UTF-8');
-            url.searchParams.set('q', text);
-            url.searchParams.set('tl', lang);
-            url.searchParams.set('client', 'gtx');
+            const isArabic = /[\u0600-\u06FF]/.test(text);
+            const voice = isArabic ? 'Zeina' : 'Brian';
 
-            const res = await fetch(url.href, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
+            const url = new URL('https://streamelements.com');
+            url.searchParams.set('voice', voice);
+            url.searchParams.set('text', text);
 
-            if (!res.ok) throw new Error('Failed to fetch audio');
-            const audioBuffer = Buffer.from(await res.arrayBuffer());
+            const res = await fetch(url.href);
+            if (!res.ok) throw new Error('API Error');
+
+            const arrayBuffer = await res.arrayBuffer();
+            const audioBuffer = Buffer.from(arrayBuffer);
+
+            if (audioBuffer.length < 500) {
+                throw new Error('Empty audio');
+            }
 
             await sock.sendMessage(
                 remoteJid,
@@ -28,7 +29,7 @@ module.exports = {
                 { quoted: m }
             );
         } catch {
-            await sock.sendMessage(remoteJid, { text: '❌ تعذر توليد الصوت حالياً، حاول بنص أقصر.' }, { quoted: m });
+            await sock.sendMessage(remoteJid, { text: '❌ تعذر توليد الصوت حالياً، جرب نصاً آخر أو تأكد من الاتصال.' }, { quoted: m });
         }
     }
 };
