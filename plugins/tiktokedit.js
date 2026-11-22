@@ -18,11 +18,12 @@ module.exports = {
         await sock.sendMessage(remoteJid, { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` }, { quoted: m });
 
         const outVid = path.join(__dirname, `edit_${Date.now()}.mp4`);
-        const tags = ['edit', 'amv', 'twixtor', '4k edit', 'shorts edit'];
+        const tags = ['edit', 'amv', 'twixtor', 'shorts edit'];
         const randomTag = tags.at(Math.floor(Math.random() * tags.length));
         const searchTerm = `ytsearch1:${query} ${randomTag}`;
 
-        const cmd = `yt-dlp -f "best[height<=720]/best" --merge-output-format mp4 --max-filesize 25M -o "${outVid}" "${searchTerm}"`;
+        // بدون تحديد -f لكي يختار yt-dlp الصيغة المتوفرة تلقائياً ويدمجها إلى mp4
+        const cmd = `yt-dlp --merge-output-format mp4 --max-filesize 25M -o "${outVid}" "${searchTerm}"`;
 
         exec(cmd, async (err, stdout, stderr) => {
             try {
@@ -56,3 +57,4 @@ module.exports = {
         });
     }
 };
+                
