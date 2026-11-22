@@ -4,49 +4,46 @@ module.exports = {
     async execute(sock, m, args, remoteJid) {
         const query = args.join(' ');
         if (!query) {
-            return sock.sendMessage(remoteJid, { text: '❌ اكتب اسم التطبيق بعد الأمر. مثال: `.apk Facebook Lite`' }, { quoted: m });
+            return sock.sendMessage(remoteJid, { text: '❌ اكتب اسم التطبيق بعد الأمر. مثال: `.apk VLC`' }, { quoted: m });
         }
 
-        await sock.sendMessage(remoteJid, { text: `📦 *جاري البحث وتحميل تطبيق:* ${query}...` }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: `📦 *جاري البحث وتحميل ملف APK لـ:* ${query}...` }, { quoted: m });
 
         try {
-            const api = new URL('https://aptoide.com');
-            api.searchParams.set('query', query);
-            api.searchParams.set('limit', '1');
-            api.searchParams.set('aab', '1');
+            // البحث في قاعدة بيانات تطبيقات الأندرويد المفتوحة (F-Droid Search API)
+            const searchApi = new URL('https://f-droid.org');
+            searchApi.searchParams.set('q', query);
 
-            const res = await fetch(api.href, {
-                headers: {
-                    'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 13; SM-G991B Build/TP1A.220624.014)',
-                    'Accept': 'application/json'
-                }
+            const res = await fetch(searchApi.href, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36' }
             });
-
             const data = await res.json();
-            const app = data?.datalist?.list?.at(0);
+            const firstApp = data?.apps?.at(0);
 
-            if (!app || !app.file?.path) {
-                return sock.sendMessage(remoteJid, { text: '❌ لم يتم العثور على هذا التطبيق.' }, { quoted: m });
+            if (!firstApp || !firstApp.url) {
+                throw new Error('التطبيق غير متوفر في المستودع المباشر');
             }
 
-            const sizeMB = (app.file.filesize / (1024 * 1024)).toFixed(2);
-            if (parseFloat(sizeMB) > 45) {
-                return sock.sendMessage(
-                    remoteJid,
-                    { text: `⚠️ حجم التطبيق (${app.name}) كبير جداً (${sizeMB} MB) ولا يسمح واتساب بإرساله مباشرة.` },
-                    { quoted: m }
-                );
-            }
+            // استخراج اسم الحزمة (Package Name) لبناء رابط الـ APK المباشر
+            const pkgName = firstApp.url.split('/').pop();
+            const infoApi = new URL('https://f-droid.org' + pkgName);
+            const infoRes = await fetch(infoApi.href);
+            const pkgData = await infoRes.json();
+            const versionCode = pkgData?.suggestedVersionCode || pkgData?.packages?.at(0)?.versionCode;
+
+            if (!versionCode) throw new Error('تعذر تحديد نسخة التطبيق');
+
+            const apkDownloadUrl = `https://f-droid.org{pkgName}_${versionCode}.apk`;
 
             await sock.sendMessage(
                 remoteJid,
-                { text: `📱 *الاسم:* ${app.name}\n⚖️ *الحجم:* ${sizeMB} MB\n⏳ *جاري رفع الملف إليك في واتساب...*` },
+                { text: `📱 *التطبيق:* ${firstApp.name}\n📝 *الوصف:* ${firstApp.summary}\n⏳ *جاري إرسال ملف APK...*` },
                 { quoted: m }
             );
 
-            // تحميل ملف الـ APK في الذاكرة أولاً لضمان قبوله في واتساب
-            const apkRes = await fetch(app.file.path);
-            if (!apkRes.ok) throw new Error('فشل تنزيل ملف APK من الخادم');
+            // تنزيل ملف APK في الذاكرة وإرساله لواتساب مباشرة
+            const apkRes = await fetch(apkDownloadUrl);
+            if (!apkRes.ok) throw new Error('فشل سحب ملف الحزمة');
             const apkBuffer = Buffer.from(await apkRes.arrayBuffer());
 
             await sock.sendMessage(
@@ -54,17 +51,23 @@ module.exports = {
                 {
                     document: apkBuffer,
                     mimetype: 'application/vnd.android.package-archive',
-                    fileName: `${app.name.replace(/[^a-zA-Z0-9\u0600-\u06FF\s\-_]/g, '')}.apk`
+                    fileName: `${firstApp.name.replace(/[^a-zA-Z0-9\s\-_]/g, '')}.apk`
                 },
                 { quoted: m }
             );
-        } catch (err) {
+        } catch {
+            // إذا كان التطبيق تجارياً (مثل WhatsApp أو Facebook) يرسل رابط تحميل APK مباشر من Uptodown
+            const cleanSlug = query.toLowerCase().trim().replace(/\s+/g, '-');
+            const directPage = `https://${cleanSlug}://`;
+
             await sock.sendMessage(
                 remoteJid,
-                { text: `❌ تعذر سحب التطبيق حالياً (${err.message}).` },
+                {
+                    text: `📲 *رابط تنزيل ملف APK المباشر لتطبيق (${query}):*\n\n🔗 ${directPage}\n\n💡 *(تطبيقات المتجر التجاري تُحمّل مباشرة من هذا الرابط، بينما التطبيقات المفتوحة مثل VLC و Termux تُرسل كملف جاهز هنا).*`
+                },
                 { quoted: m }
             );
         }
     }
 };
-                
+        
