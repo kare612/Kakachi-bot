@@ -1,3 +1,7 @@
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
 module.exports = {
     name: 'tiktokedit',
     aliases: ['ايديت_تيكتوك', 'تصاميم', 'تصميم', 'ttedit'],
@@ -6,67 +10,48 @@ module.exports = {
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم naruto edit` أو `.تصميم سولو ليفلينج`' },
+                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم jinwoo` أو `.تصميم naruto`' },
                 { quoted: m }
             );
         }
 
-        await sock.sendMessage(remoteJid, { text: `🎬 *جاري البحث وسحب تصميم تيك توك لـ:* ${query}...` }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: `🎬 *جاري البحث وسحب تصميم لـ:* ${query}...` }, { quoted: m });
 
-        try {
-            const searchQuery = `${query} edit 4k`;
-            const api = new URL('https://tikwm.com');
-            api.searchParams.set('keywords', searchQuery);
-            api.searchParams.set('count', '10');
-            api.searchParams.set('cursor', '0');
+        const outVid = path.join(__dirname, `edit_${Date.now()}.mp4`);
+        // اختيار نتيجة عشوائية من أول 5 تصاميم لكي يعطيك تصميماً مختلفاً في كل مرة
+        const randomIndex = Math.floor(Math.random() * 5) + 1;
+        const searchTerm = `ytsearch5:${query} edit shorts 4k`;
 
-            const res = await fetch(api.href, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-G991B) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36'
+        const cmd = `yt-dlp --playlist-items ${randomIndex} -f "best[height<=720][ext=mp4]/best[ext=mp4]" --max-filesize 20M -o "${outVid}" "${searchTerm}"`;
+
+        exec(cmd, async (err) => {
+            try {
+                if (err || !fs.existsSync(outVid)) {
+                    return await sock.sendMessage(
+                        remoteJid,
+                        { text: `❌ تعذر سحب تصميم لـ (${query}) حالياً، حاول مرة أخرى.` },
+                        { quoted: m }
+                    );
                 }
-            });
 
-            const json = await res.json();
-            const videos = json?.data?.videos || [];
-
-            if (videos.length === 0) {
-                return await sock.sendMessage(
+                await sock.sendMessage(
                     remoteJid,
-                    { text: `❌ لم يتم العثور على تصاميم تطابق (${query})، جرب كتابة الاسم بالإنجليزية.` },
+                    {
+                        video: fs.readFileSync(outVid),
+                        mimetype: 'video/mp4',
+                        caption: `🌑 *تـصـمـيـم (Edit) جاهز:* ${query} 🎬`
+                    },
                     { quoted: m }
                 );
+            } catch (sendErr) {
+                await sock.sendMessage(
+                    remoteJid,
+                    { text: `❌ فشل إرسال الفيديو: ${sendErr.message}` },
+                    { quoted: m }
+                );
+            } finally {
+                if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
             }
-
-            // اختيار تصميم عشوائي من أعلى 10 نتائج لتجديد الفيديوهات في كل مرة تطلب فيها
-            const chosen = videos.at(Math.floor(Math.random() * videos.length));
-            const videoUrl = chosen.play || chosen.wmplay;
-
-            if (!videoUrl) throw new Error('تعذر استخراج رابط الفيديو');
-
-            const videoRes = await fetch(videoUrl);
-            if (!videoRes.ok) throw new Error('فشل تحميل مقطع التصميم');
-            const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
-
-            const caption = `🌑 *تـصـمـيـم تـيـك تـوك جاهز* 🎬\n\n` +
-                            `📝 *العنوان:* ${chosen.title || query}\n` +
-                            `👤 *المصمم:* ${chosen.author?.nickname || 'غير معروف'}\n` +
-                            `❤️ *الإعجابات:* ${chosen.digg_count || 0}`;
-
-            await sock.sendMessage(
-                remoteJid,
-                {
-                    video: videoBuffer,
-                    mimetype: 'video/mp4',
-                    caption
-                },
-                { quoted: m }
-            );
-        } catch (err) {
-            await sock.sendMessage(
-                remoteJid,
-                { text: `❌ تعذر جلب التصميم حالياً (${err.message}).` },
-                { quoted: m }
-            );
-        }
+        });
     }
 };
