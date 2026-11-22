@@ -22,16 +22,21 @@ module.exports = {
         const randomTag = tags.at(Math.floor(Math.random() * tags.length));
         const searchTerm = `ytsearch1:${query} ${randomTag}`;
 
-        // بدون تحديد -f لكي يختار yt-dlp الصيغة المتوفرة تلقائياً ويدمجها إلى mp4
-        const cmd = `yt-dlp --merge-output-format mp4 --max-filesize 25M -o "${outVid}" "${searchTerm}"`;
+        // تمرير node كـ runtime + اختيار صيغة mp4 بحجم أقل من 25M مباشرة لتجنب التخطي
+        const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<25M]/bestvideo[ext=mp4][filesize<20M]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -o "${outVid}" "${searchTerm}"`;
 
         exec(cmd, async (err, stdout, stderr) => {
             try {
                 if (!fs.existsSync(outVid)) {
-                    const reason = (stderr || err?.message || 'غير معروف').split('\n').filter(Boolean).pop();
+                    // البحث عن سطر ERROR الفعلي بدلاً من عرض WARNING
+                    const errorLines = (stderr || '').split('\n').filter(line => line.includes('ERROR:'));
+                    const reason = errorLines.length > 0 
+                        ? errorLines.join('\n') 
+                        : (stdout.includes('File is larger than') ? 'حجم الفيديو أكبر من الحد المسموح (25MB).' : (stderr || err?.message || 'غير معروف'));
+
                     return await sock.sendMessage(
                         remoteJid,
-                        { text: `❌ تعذر سحب التصميم: ${reason}` },
+                        { text: `❌ تعذر سحب التصميم:\n${reason}` },
                         { quoted: m }
                     );
                 }
@@ -57,4 +62,3 @@ module.exports = {
         });
     }
 };
-                
