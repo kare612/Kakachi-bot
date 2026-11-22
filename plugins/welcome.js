@@ -6,23 +6,22 @@ module.exports = {
             return sock.sendMessage(remoteJid, { text: '❌ للمجموعات فقط.' }, { quoted: m });
         }
 
-        global.welcomeGroups = global.welcomeGroups || {};
+        global.welcomeDisabled = global.welcomeDisabled || {};
         const option = args.at(0)?.toLowerCase();
 
-        if (option === 'on' || option === 'تفعيل') {
-            global.welcomeGroups[remoteJid] = true;
-            return sock.sendMessage(remoteJid, { text: '🌑 *تم تفعيل الترحيب بصورة الملف الشخصي في هذه المجموعة.*' }, { quoted: m });
-        } else if (option === 'off' || option === 'ايقاف') {
-            global.welcomeGroups[remoteJid] = false;
-            return sock.sendMessage(remoteJid, { text: '🕯️ *تم إيقاف الترحيب.*' }, { quoted: m });
+        if (option === 'off' || option === 'ايقاف') {
+            global.welcomeDisabled[remoteJid] = true;
+            return sock.sendMessage(remoteJid, { text: '🕯️ *تم إيقاف الترحيب التلقائي في هذه المجموعة.*' }, { quoted: m });
+        } else if (option === 'on' || option === 'تفعيل') {
+            global.welcomeDisabled[remoteJid] = false;
+            return sock.sendMessage(remoteJid, { text: '🌑 *الترحيب التلقائي بصورة الملف الشخصي مفعّل الآن.*' }, { quoted: m });
         } else {
-            return sock.sendMessage(remoteJid, { text: '⚙️ اكتب `.welcome تفعيل` أو `.welcome ايقاف`' }, { quoted: m });
+            return sock.sendMessage(remoteJid, { text: '🌑 *الترحيب التلقائي مفعّل افتراضياً!* لإيقافه اكتب `.welcome ايقاف`' }, { quoted: m });
         }
     },
 
-    // دالة إرسال الترحيب بصورة البروفايل عند دخول عضو جديد
     async onJoin(sock, groupId, participants) {
-        if (!global.welcomeGroups?.[groupId]) return;
+        if (global.welcomeDisabled?.[groupId]) return;
 
         const meta = await sock.groupMetadata(groupId);
         const fallbackImg = 'https://ibb.co';
@@ -36,17 +35,25 @@ module.exports = {
             }
 
             const caption = `🌑 ───『 *مـرحـبـاً بـك فـي الـظـلام* 』─── 🌑\n\n` +
-                            `👤 *العضو:* @${user.split('@').at(0)}\n` +
+                            `👤 *العضو الجديد:* @${user.split('@').at(0)}\n` +
                             `🏰 *المجموعة:* ${meta.subject}\n` +
                             `👥 *العدد الآن:* ${meta.participants.length}\n\n` +
                             `🕯️ *أهلاً بك بيننا.*`;
 
             try {
-                await sock.sendMessage(groupId, { image: { url: ppUrl }, caption, mentions: [user] });
+                // تحميل صورة البروفايل كـ Buffer لضمان ظهورها دائماً في واتساب
+                const res = await fetch(ppUrl);
+                if (!res.ok) throw new Error('فشل تحميل الصورة');
+                const imgBuffer = Buffer.from(await res.arrayBuffer());
+
+                await sock.sendMessage(groupId, {
+                    image: imgBuffer,
+                    caption,
+                    mentions: [user]
+                });
             } catch {
                 await sock.sendMessage(groupId, { text: caption, mentions: [user] });
             }
         }
     }
 };
-              
