@@ -1,64 +1,39 @@
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 
 module.exports = {
-    name: 'tiktokedit',
-    aliases: ['ايديت_تيكتوك', 'تصاميم', 'تصميم', 'ttedit'],
-    async execute(sock, m, args, remoteJid) {
-        const query = args.join(' ').trim();
+    command: ['تصميم', 'اديت'],
+    async execute(sock, msg, args, text) {
+        const from = msg.key.remoteJid;
+        const query = args.join(' ') || text;
+
         if (!query) {
-            return sock.sendMessage(
-                remoteJid,
-                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم jinwoo` أو `.تصميم naruto`' },
-                { quoted: m }
-            );
+            return sock.sendMessage(from, { text: '⚠️ اكتب اسم الشخصية أو التصميم بعد الأمر.\nمثال: *.تصميم كاكاشي*' }, { quoted: msg });
         }
 
-        await sock.sendMessage(remoteJid, { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` }, { quoted: m });
+        await sock.sendMessage(from, { text: `🎬 *جاري البحث وسحب تصميم لـ:* ${query}...` }, { quoted: msg });
 
-        const outVid = path.join(__dirname, `edit_${Date.now()}.mp4`);
-        const tags = ['edit', 'amv', 'twixtor', 'shorts edit'];
-        const randomTag = tags.at(Math.floor(Math.random() * tags.length));
-        const searchTerm = `ytsearch1:${query} ${randomTag}`;
+        try {
+            // البحث في تيك توك عبر API مجاني بدون الحاجة لـ yt-dlp
+            const searchQuery = encodeURIComponent(`${query} edit amv`);
+            const res = await axios.get(`https://tikwm.com{searchQuery}&count=10`);
 
-        // تمرير node كـ runtime + اختيار صيغة mp4 بحجم أقل من 25M مباشرة لتجنب التخطي
-        const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<25M]/bestvideo[ext=mp4][filesize<20M]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -o "${outVid}" "${searchTerm}"`;
-
-        exec(cmd, async (err, stdout, stderr) => {
-            try {
-                if (!fs.existsSync(outVid)) {
-                    // البحث عن سطر ERROR الفعلي بدلاً من عرض WARNING
-                    const errorLines = (stderr || '').split('\n').filter(line => line.includes('ERROR:'));
-                    const reason = errorLines.length > 0 
-                        ? errorLines.join('\n') 
-                        : (stdout.includes('File is larger than') ? 'حجم الفيديو أكبر من الحد المسموح (25MB).' : (stderr || err?.message || 'غير معروف'));
-
-                    return await sock.sendMessage(
-                        remoteJid,
-                        { text: `❌ تعذر سحب التصميم:\n${reason}` },
-                        { quoted: m }
-                    );
-                }
-
-                await sock.sendMessage(
-                    remoteJid,
-                    {
-                        video: fs.readFileSync(outVid),
-                        mimetype: 'video/mp4',
-                        caption: `🌑 *تـصـمـيـم (Edit) جاهز:* ${query} 🎬`
-                    },
-                    { quoted: m }
-                );
-            } catch (sendErr) {
-                await sock.sendMessage(
-                    remoteJid,
-                    { text: `❌ فشل إرسال الفيديو: ${sendErr.message}` },
-                    { quoted: m }
-                );
-            } finally {
-                if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
+            const videos = res.data?.data?.videos;
+            if (!videos || videos.length === 0) {
+                return sock.sendMessage(from, { text: '❌ لم يتم العثور على تصاميم لهذا الاسم.' }, { quoted: msg });
             }
-        });
+
+            // اختيار فيديو عشوائي من النتائج
+            const randomVideo = videos[Math.floor(Math.random() * videos.length)];
+            const videoUrl = randomVideo.play; // رابط الفيديو بدون علامة مائية
+
+            await sock.sendMessage(from, {
+                video: { url: videoUrl },
+                caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *البحث:* ${query}`
+            }, { quoted: msg });
+
+        } catch (error) {
+            console.error(error);
+            await sock.sendMessage(from, { text: '❌ حدث خطأ أثناء جلب الفيديو، حاول مرة أخرى.' }, { quoted: msg });
+        }
     }
 };
