@@ -15,21 +15,22 @@ module.exports = {
             );
         }
 
-        await sock.sendMessage(remoteJid, { text: `🎬 *جاري البحث وسحب تصميم لـ:* ${query}...` }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` }, { quoted: m });
 
         const outVid = path.join(__dirname, `edit_${Date.now()}.mp4`);
-        // اختيار نتيجة عشوائية من أول 5 تصاميم لكي يعطيك تصميماً مختلفاً في كل مرة
-        const randomIndex = Math.floor(Math.random() * 5) + 1;
-        const searchTerm = `ytsearch5:${query} edit shorts 4k`;
+        const tags = ['edit', 'amv', 'twixtor', '4k edit', 'shorts edit'];
+        const randomTag = tags.at(Math.floor(Math.random() * tags.length));
+        const searchTerm = `ytsearch1:${query} ${randomTag}`;
 
-        const cmd = `yt-dlp --playlist-items ${randomIndex} -f "best[height<=720][ext=mp4]/best[ext=mp4]" --max-filesize 20M -o "${outVid}" "${searchTerm}"`;
+        const cmd = `yt-dlp -f "best[height<=720]/best" --merge-output-format mp4 --max-filesize 25M -o "${outVid}" "${searchTerm}"`;
 
-        exec(cmd, async (err) => {
+        exec(cmd, async (err, stdout, stderr) => {
             try {
-                if (err || !fs.existsSync(outVid)) {
+                if (!fs.existsSync(outVid)) {
+                    const reason = (stderr || err?.message || 'غير معروف').split('\n').filter(Boolean).pop();
                     return await sock.sendMessage(
                         remoteJid,
-                        { text: `❌ تعذر سحب تصميم لـ (${query}) حالياً، حاول مرة أخرى.` },
+                        { text: `❌ تعذر سحب التصميم: ${reason}` },
                         { quoted: m }
                     );
                 }
