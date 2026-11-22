@@ -1,39 +1,57 @@
 const axios = require('axios');
 
 module.exports = {
-    command: ['تصميم', 'اديت'],
-    async execute(sock, msg, args, text) {
-        const from = msg.key.remoteJid;
-        const query = args.join(' ') || text;
-
+    name: 'tiktokedit',
+    aliases: ['تصميم', 'تصاميم', 'اديت', 'ttedit'],
+    command: ['تصميم', 'تصاميم', 'اديت'],
+    async execute(sock, m, args, remoteJid) {
+        const query = Array.isArray(args) ? args.join(' ').trim() : '';
         if (!query) {
-            return sock.sendMessage(from, { text: '⚠️ اكتب اسم الشخصية أو التصميم بعد الأمر.\nمثال: *.تصميم كاكاشي*' }, { quoted: msg });
+            return sock.sendMessage(
+                remoteJid,
+                { text: '⚠️ اكتب اسم الشخصية بعد الأمر.\nمثال: *.تصميم كاكاشي*' },
+                { quoted: m }
+            );
         }
 
-        await sock.sendMessage(from, { text: `🎬 *جاري البحث وسحب تصميم لـ:* ${query}...` }, { quoted: msg });
+        await sock.sendMessage(
+            remoteJid,
+            { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` },
+            { quoted: m }
+        );
 
         try {
-            // البحث في تيك توك عبر API مجاني بدون الحاجة لـ yt-dlp
-            const searchQuery = encodeURIComponent(`${query} edit amv`);
-            const res = await axios.get(`https://tikwm.com{searchQuery}&count=10`);
+            const tags = ['edit', 'amv', 'twixtor'];
+            const randomTag = tags[Math.floor(Math.random() * tags.length)];
+            const searchQuery = encodeURIComponent(`${query} ${randomTag}`);
 
+            const apiUrl = 'https://tikwm.com' + searchQuery + '&count=10';
+            const res = await axios.get(apiUrl);
             const videos = res.data?.data?.videos;
+
             if (!videos || videos.length === 0) {
-                return sock.sendMessage(from, { text: '❌ لم يتم العثور على تصاميم لهذا الاسم.' }, { quoted: msg });
+                return sock.sendMessage(
+                    remoteJid,
+                    { text: `❌ لم يتم العثور على تصميم لـ: ${query}` },
+                    { quoted: m }
+                );
             }
 
-            // اختيار فيديو عشوائي من النتائج
-            const randomVideo = videos[Math.floor(Math.random() * videos.length)];
-            const videoUrl = randomVideo.play; // رابط الفيديو بدون علامة مائية
-
-            await sock.sendMessage(from, {
-                video: { url: videoUrl },
-                caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *البحث:* ${query}`
-            }, { quoted: msg });
-
-        } catch (error) {
-            console.error(error);
-            await sock.sendMessage(from, { text: '❌ حدث خطأ أثناء جلب الفيديو، حاول مرة أخرى.' }, { quoted: msg });
+            const pick = videos[Math.floor(Math.random() * videos.length)];
+            await sock.sendMessage(
+                remoteJid,
+                {
+                    video: { url: pick.play },
+                    caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *الشخصية:* ${query}`
+                },
+                { quoted: m }
+            );
+        } catch (e) {
+            await sock.sendMessage(
+                remoteJid,
+                { text: `❌ تعذر سحب التصميم: ${e.message}` },
+                { quoted: m }
+            );
         }
     }
 };
