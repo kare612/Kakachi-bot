@@ -1,100 +1,75 @@
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 
 module.exports = {
     name: 'apk',
-    aliases: ['تطبيق', 'تطبيقات', 'تحميل_تطبيق'],
+    aliases: ['تطبيق', 'تطبيقات', 'app', 'برنامج'],
     async execute(sock, m, args, remoteJid) {
         const query = args.join(' ').trim();
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '❌ اكتب اسم التطبيق بعد الأمر. مثال:\n`.apk free music`\n`.apk facebook lite`\n`.apk vlc`' },
+                { text: '❌ اكتب اسم التطبيق بعد الأمر.\nمثال: `.تطبيق واتساب` أو `.apk minecraft`' },
                 { quoted: m }
             );
         }
 
-        await sock.sendMessage(remoteJid, { text: `🌐 *جاري البحث في المتجر عن:* ${query}...` }, { quoted: m });
+        await sock.sendMessage(remoteJid, { text: `🔍 *جاري البحث عن تطبيق:* ${query}...` }, { quoted: m });
 
         try {
-            // البحث عبر واجهة المتجر المفتوحة لجلب اسم التطبيق ورابط ملف APK المباشر
-            const apiUrl = new URL('https://aptoide.com');
-            apiUrl.searchParams.set('query', query);
-            apiUrl.searchParams.set('limit', '1');
+            // البحث في قاعدة بيانات Aptoide المجانية
+            const searchUrl = `https://aptoide.com{encodeURIComponent(query)}&limit=1`;
+            const { data } = await axios.get(searchUrl);
 
-            const res = await fetch(apiUrl.href, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-                    'Accept': 'application/json'
-                }
-            });
-
-            const text = await res.text();
-            let app = null;
-
-            if (!text.trim().startsWith('<')) {
-                const json = JSON.parse(text);
-                app = json?.datalist?.list?.at(0);
-            }
-
+            const app = data?.datalist?.list?.[0];
             if (!app || !app.file?.path) {
-                return await sock.sendMessage(
+                return sock.sendMessage(
                     remoteJid,
-                    { text: `❌ لم يتم العثور على ملف APK مباشر لتطبيق (${query}) حالياً.` },
+                    { text: '❌ لم يتم العثور على التطبيق المطلوب، جرب كتابة الاسم بالإنجليزية.' },
                     { quoted: m }
                 );
             }
 
-            const appName = app.name || query;
-            const pkg = app.package || 'app';
-            const downloadUrl = app.file.path;
-            const sizeMB = (app.file.filesize / (1024 * 1024)).toFixed(2);
-            const tempApk = path.join(__dirname, `${pkg}_${Date.now()}.apk`);
+            // حساب حجم التطبيق بالميجابايت
+            const sizeInMB = (app.file.filesize / (1024 * 1024)).toFixed(2);
 
+            // حماية السيرفر و Termux من توقف الرام إذا كان التطبيق كبيراً جداً
+            if (parseFloat(sizeInMB) > 100) {
+                return sock.sendMessage(
+                    remoteJid,
+                    {
+                        text: `⚠️ حجم تطبيق *${app.name}* كبير جداً (${sizeInMB} MB).\n📥 يمكنك تحميله مباشرة من الرابط:\n${app.file.path}`
+                    },
+                    { quoted: m }
+                );
+            }
+
+            // إرسال معلومات التطبيق وصورته قبل رفع الملف
+            const caption = `📱 *اسم التطبيق:* ${app.name}\n📦 *الإصدار:* ${app.file.vername || 'غير محدد'}\n⚖️ *الحجم:* ${sizeInMB} MB\n⏳ *جاري رفع وإرسال ملف APK...*`;
+            
+            if (app.icon) {
+                await sock.sendMessage(remoteJid, { image: { url: app.icon }, caption }, { quoted: m });
+            } else {
+                await sock.sendMessage(remoteJid, { text: caption }, { quoted: m });
+            }
+
+            // إرسال ملف التطبيق بصيغة APK مباشرة عبر الرابط
             await sock.sendMessage(
                 remoteJid,
-                { text: `📦 *التطبيق:* ${appName}\n⚖️ *الحجم:* ${sizeMB} MB\n⏳ *جاري تنزيل ملف الـ APK وإرساله إليك...*` },
+                {
+                    document: { url: app.file.path },
+                    mimetype: 'application/vnd.android.package-archive',
+                    fileName: `${app.name}.apk`
+                },
                 { quoted: m }
             );
 
-            // تنزيل ملف APK مباشرة من رابط الخادم باستخدام curl
-            const curlCmd = `curl -L -s --max-time 120 -o "${tempApk}" "${downloadUrl}"`;
-
-            exec(curlCmd, async (err) => {
-                try {
-                    if (err || !fs.existsSync(tempApk) || fs.statSync(tempApk).size < 100000) {
-                        if (fs.existsSync(tempApk)) fs.unlinkSync(tempApk);
-                        return await sock.sendMessage(
-                            remoteJid,
-                            { text: `❌ تعذر تنزيل حزمة (${appName}) من الخادم.` },
-                            { quoted: m }
-                        );
-                    }
-
-                    await sock.sendMessage(
-                        remoteJid,
-                        {
-                            document: { url: tempApk },
-                            mimetype: 'application/vnd.android.package-archive',
-                            fileName: `${appName.replace(/[^a-zA-Z0-9\u0600-\u06FF\s\-_]/g, '')}.apk`,
-                            caption: `✅ *${appName}* (${sizeMB} MB)`
-                        },
-                        { quoted: m }
-                    );
-                } finally {
-                    setTimeout(() => {
-                        if (fs.existsSync(tempApk)) fs.unlinkSync(tempApk);
-                    }, 20000);
-                }
-            });
         } catch (err) {
             await sock.sendMessage(
                 remoteJid,
-                { text: `❌ حدث خطأ أثناء البحث: ${err.message}` },
+                { text: `❌ حدث خطأ أثناء جلب التطبيق: ${err.message}` },
                 { quoted: m }
             );
         }
     }
 };
-                            
+                
