@@ -1,32 +1,23 @@
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
 
 module.exports = {
     name: 'tts',
     aliases: ['انطق', 'صوت'],
+    command: ['انطق', 'صوت', 'tts'],
     async execute(sock, m, args, remoteJid) {
-        const text = args.join(' ').replace(/["'`$\\]/g, '');
-        if (!text) return sock.sendMessage(remoteJid, { text: '❌ اكتب النص الذي تريد تحويله إلى صوت.' }, { quoted: m });
+        const text = Array.isArray(args) ? args.join(' ').trim() : '';
+        if (!text) return sock.sendMessage(remoteJid, { text: '⚠️ اكتب النص المراد نطقه.\nمثال: *.انطق مرحبا بك*' }, { quoted: m });
 
-        const outFile = path.join(__dirname, `tts_${Date.now()}.wav`);
-        const lang = /[\u0600-\u06FF]/.test(text) ? 'ar' : 'en';
-
-        exec(`espeak -v ${lang} -w "${outFile}" "${text}"`, async (err) => {
-            if (err || !fs.existsSync(outFile)) {
-                return sock.sendMessage(remoteJid, { text: '❌ تأكد من تثبيت أداة espeak في Termux.' }, { quoted: m });
-            }
-            try {
-                const audioBuffer = fs.readFileSync(outFile);
-                await sock.sendMessage(
-                    remoteJid,
-                    { audio: audioBuffer, mimetype: 'audio/mp4', ptt: false },
-                    { quoted: m }
-                );
-            } finally {
-                if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
-            }
-        });
+        try {
+            const url = `https://google.com{encodeURIComponent(text)}&tl=ar&client=tw-ob`;
+            const res = await axios.get(url, { responseType: 'arraybuffer' });
+            await sock.sendMessage(remoteJid, {
+                audio: Buffer.from(res.data),
+                mimetype: 'audio/mp4',
+                ptt: true
+            }, { quoted: m });
+        } catch (e) {
+            await sock.sendMessage(remoteJid, { text: `❌ تعذر تحويل النص لصوت: ${e.message}` }, { quoted: m });
+        }
     }
 };
-                    
