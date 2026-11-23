@@ -25,47 +25,38 @@ module.exports = {
             const randomTag = tags[Math.floor(Math.random() * tags.length)];
             const searchQuery = encodeURIComponent(`${query} ${randomTag}`);
 
-            const apiUrl = 'https://tikwm.com' + '/api/feed/search?keywords=' + searchQuery + '&count=10';
-            
-            // إضافة ترويسات متصفح حقيقية لتجاوز حظر 403
-            const res = await axios.get(apiUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/javascript, */*; q=0.01',
-                    'Referer': 'https://tikwm.com/'
-                }
-            });
+            let videoUrl = null;
 
-            const videos = res.data?.data?.videos;
-            if (!videos || videos.length === 0) {
-                return sock.sendMessage(
-                    remoteJid,
-                    { text: `❌ لم يتم العثور على تصميم لـ: ${query}` },
-                    { quoted: m }
-                );
+            // المصدر الأول: Siputzx TikTok Search API (مفتوح للسيرفرات)
+            try {
+                const res1 = await axios.get(`https://siputzx.my.id{searchQuery}`, { timeout: 15000 });
+                const list1 = res1.data?.data;
+                if (Array.isArray(list1) && list1.length > 0) {
+                    const pick = list1[Math.floor(Math.random() * list1.length)];
+                    videoUrl = pick.play || pick.video || pick.nowm;
+                }
+            } catch (_) {}
+
+            // المصدر الثاني (احتياطي): Vreden TikTok Search API
+            if (!videoUrl) {
+                try {
+                    const res2 = await axios.get(`https://vreden.my.id{searchQuery}`, { timeout: 15000 });
+                    const list2 = res2.data?.result;
+                    if (Array.isArray(list2) && list2.length > 0) {
+                        const pick = list2[Math.floor(Math.random() * list2.length)];
+                        videoUrl = pick.play || pick.video || pick.url;
+                    }
+                } catch (_) {}
             }
 
-            const pick = videos[Math.floor(Math.random() * videos.length)];
-            let videoUrl = pick.play || pick.wmplay;
-
-            if (videoUrl && !videoUrl.startsWith('http')) {
-                videoUrl = 'https://tikwm.com' + videoUrl;
+            if (!videoUrl) {
+                throw new Error('لم يتم العثور على رابط تصميم متاح حالياً');
             }
-
-            // تحميل الفيديو كـ Buffer مع ترويسة المتصفح لضمان عدم حظر 403 عند التحميل
-            const videoRes = await axios.get(videoUrl, {
-                responseType: 'arraybuffer',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://tikwm.com/'
-                }
-            });
 
             await sock.sendMessage(
                 remoteJid,
                 {
-                    video: Buffer.from(videoRes.data),
-                    mimetype: 'video/mp4',
+                    video: { url: videoUrl },
                     caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *الشخصية:* ${query}`
                 },
                 { quoted: m }
