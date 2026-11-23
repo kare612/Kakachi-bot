@@ -25,10 +25,18 @@ module.exports = {
             const randomTag = tags[Math.floor(Math.random() * tags.length)];
             const searchQuery = encodeURIComponent(`${query} ${randomTag}`);
 
-            const apiUrl = 'https://tikwm.com' + searchQuery + '&count=10';
-            const res = await axios.get(apiUrl);
-            const videos = res.data?.data?.videos;
+            const apiUrl = 'https://tikwm.com' + '/api/feed/search?keywords=' + searchQuery + '&count=10';
+            
+            // إضافة ترويسات متصفح حقيقية لتجاوز حظر 403
+            const res = await axios.get(apiUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'Referer': 'https://tikwm.com/'
+                }
+            });
 
+            const videos = res.data?.data?.videos;
             if (!videos || videos.length === 0) {
                 return sock.sendMessage(
                     remoteJid,
@@ -40,19 +48,24 @@ module.exports = {
             const pick = videos[Math.floor(Math.random() * videos.length)];
             let videoUrl = pick.play || pick.wmplay;
 
-            // إكمال الرابط إذا كان نسبياً لتجنب خطأ Invalid URL
             if (videoUrl && !videoUrl.startsWith('http')) {
                 videoUrl = 'https://tikwm.com' + videoUrl;
             }
 
-            if (!videoUrl) {
-                throw new Error('لم يتم العثور على رابط مباشر للفيديو');
-            }
+            // تحميل الفيديو كـ Buffer مع ترويسة المتصفح لضمان عدم حظر 403 عند التحميل
+            const videoRes = await axios.get(videoUrl, {
+                responseType: 'arraybuffer',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://tikwm.com/'
+                }
+            });
 
             await sock.sendMessage(
                 remoteJid,
                 {
-                    video: { url: videoUrl },
+                    video: Buffer.from(videoRes.data),
+                    mimetype: 'video/mp4',
                     caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *الشخصية:* ${query}`
                 },
                 { quoted: m }
