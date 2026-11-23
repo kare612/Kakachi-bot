@@ -9,7 +9,7 @@ module.exports = {
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '⚠️ اكتب اسم الشخصية بعد الأمر.\nمثال: *.تصميم كاكاشي*' },
+                { text: '❌ اكتب اسم الشخصية أو التصميم بعد الأمر.\nمثال: *.تصميم كاكاشي*' },
                 { quoted: m }
             );
         }
@@ -38,10 +38,21 @@ module.exports = {
             }
 
             const pick = videos[Math.floor(Math.random() * videos.length)];
+            let videoUrl = pick.play || pick.wmplay;
+
+            // إكمال الرابط إذا كان نسبياً لتجنب خطأ Invalid URL
+            if (videoUrl && !videoUrl.startsWith('http')) {
+                videoUrl = 'https://tikwm.com' + videoUrl;
+            }
+
+            if (!videoUrl) {
+                throw new Error('لم يتم العثور على رابط مباشر للفيديو');
+            }
+
             await sock.sendMessage(
                 remoteJid,
                 {
-                    video: { url: pick.play },
+                    video: { url: videoUrl },
                     caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *الشخصية:* ${query}`
                 },
                 { quoted: m }
