@@ -1,5 +1,5 @@
 const yts = require('yt-search');
-const axios = require('axios');
+const ytdl = require('@distube/ytdl-core');
 
 module.exports = {
     name: 'tiktokedit',
@@ -22,9 +22,9 @@ module.exports = {
         );
 
         try {
-            // 1. البحث عن فيديوهات تصميم قصيرة (Shorts / Edits) عبر yt-search
+            // 1. البحث عن فيديوهات تصميم قصيرة عبر yt-search
             const search = await yts(`${query} edit amv shorts`);
-            const videos = search.videos.filter(v => v.seconds > 5 && v.seconds <= 90);
+            const videos = search.videos.filter(v => v.seconds > 5 && v.seconds <= 60);
 
             if (!videos || videos.length === 0) {
                 return sock.sendMessage(
@@ -34,32 +34,30 @@ module.exports = {
                 );
             }
 
-            const pick = videos[Math.floor(Math.random() * Math.min(videos.length, 8))];
-            let videoUrl = null;
+            const pick = videos[Math.floor(Math.random() * Math.min(videos.length, 6))];
 
-            // 2. جلب رابط التحميل المباشر من مصادر API مستقرة
-            const apis = [
-                `https://delirius.store{encodeURIComponent(pick.url)}`,
-                `https://ryzendesu.vip{encodeURIComponent(pick.url)}`,
-                `https://vreden.my.id{encodeURIComponent(pick.url)}`
-            ];
+            // 2. استخراج رابط الفيديو المباشر محلياً داخل السيرفر (بدون مواقع خارجية)
+            const info = await ytdl.getInfo(pick.url);
+            const format = ytdl.chooseFormat(info.formats, { quality: '18' }) || 
+                           info.formats.find(f => f.hasVideo && f.hasAudio && f.container === 'mp4');
 
-            for (const api of apis) {
-                try {
-                    const res = await axios.get(api, { timeout: 15000 });
-                    videoUrl = res.data?.data?.download?.url || res.data?.url || res.data?.result?.download?.url || res.data?.data?.url;
-                    if (videoUrl) break;
-                } catch (_) {}
+            if (!format || !format.url) {
+                throw new Error('تعذر إيجاد صيغة MP4 مناسبة لهذا الفيديو');
             }
 
-            if (!videoUrl) {
-                throw new Error('تعذر استخراج رابط الفيديو من السيرفرات حالياً');
+            // تحميل الفيديو كـ Buffer خفيف وإرساله مباشرة لواتساب
+            const chunks = [];
+            const stream = ytdl.downloadFromInfo(info, { format });
+            for await (const chunk of stream) {
+                chunks.push(chunk);
             }
+            const videoBuffer = Buffer.concat(chunks);
 
             await sock.sendMessage(
                 remoteJid,
                 {
-                    video: { url: videoUrl },
+                    video: videoBuffer,
+                    mimetype: 'video/mp4',
                     caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *العنوان:* ${pick.title}\n⏱️ *المدة:* ${pick.timestamp}`
                 },
                 { quoted: m }
@@ -73,4 +71,3 @@ module.exports = {
         }
     }
 };
-      
