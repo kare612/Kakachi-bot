@@ -10,7 +10,7 @@ module.exports = {
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم jinwoo` أو `.تصميم naruto`' },
+                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم كاكاشي` أو `.تصميم naruto`' },
                 { quoted: m }
             );
         }
@@ -22,17 +22,16 @@ module.exports = {
         const randomTag = tags.at(Math.floor(Math.random() * tags.length));
         const searchTerm = `ytsearch1:${query} ${randomTag}`;
 
-        // تمرير node كـ runtime + اختيار صيغة mp4 بحجم أقل من 25M مباشرة لتجنب التخطي
-        const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<25M]/bestvideo[ext=mp4][filesize<20M]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -o "${outVid}" "${searchTerm}"`;
+        // اختيار صيغة mp4 خفيفة (أقل من 6MB أو 480p) لتسريع الرفع على الواي فاي الضعيف
+        const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<6M]/best[height<=480][ext=mp4]/worst[ext=mp4]" --merge-output-format mp4 -o "${outVid}" "${searchTerm}"`;
 
         exec(cmd, async (err, stdout, stderr) => {
             try {
                 if (!fs.existsSync(outVid)) {
-                    // البحث عن سطر ERROR الفعلي بدلاً من عرض WARNING
                     const errorLines = (stderr || '').split('\n').filter(line => line.includes('ERROR:'));
-                    const reason = errorLines.length > 0 
-                        ? errorLines.join('\n') 
-                        : (stdout.includes('File is larger than') ? 'حجم الفيديو أكبر من الحد المسموح (25MB).' : (stderr || err?.message || 'غير معروف'));
+                    const reason = errorLines.length > 0
+                        ? errorLines.join('\n')
+                        : (stderr || err?.message || 'تعذر سحب الفيديو بسبب ضعف الاتصال.');
 
                     return await sock.sendMessage(
                         remoteJid,
@@ -53,7 +52,7 @@ module.exports = {
             } catch (sendErr) {
                 await sock.sendMessage(
                     remoteJid,
-                    { text: `❌ فشل إرسال الفيديو: ${sendErr.message}` },
+                    { text: `❌ فشل إرسال الفيديو:\n${sendErr.message}` },
                     { quoted: m }
                 );
             } finally {
