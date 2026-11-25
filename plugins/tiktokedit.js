@@ -1,81 +1,65 @@
-const axios = require('axios');
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
     name: 'tiktokedit',
-    aliases: ['تصميم', 'تصاميم', 'اديت', 'ttedit'],
-    command: ['تصميم', 'تصاميم', 'اديت'],
+    aliases: ['ايديت_تيكتوك', 'تصاميم', 'تصميم', 'ttedit'],
     async execute(sock, m, args, remoteJid) {
-        const query = Array.isArray(args) ? args.join(' ').trim() : '';
+        const query = args.join(' ').trim();
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '❌ اكتب اسم الشخصية أو التصميم بعد الأمر.\nمثال: *.تصميم كاكاشي*' },
+                { text: '❌ اكتب اسم الشخصية أو نوع التصميم بعد الأمر.\nمثال: `.تصميم jinwoo` أو `.تصميم naruto`' },
                 { quoted: m }
             );
         }
 
-        await sock.sendMessage(
-            remoteJid,
-            { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` },
-            { quoted: m }
-        );
+        await sock.sendMessage(remoteJid, { text: `🎬 *جاري سحب تصميم لـ:* ${query}...` }, { quoted: m });
 
-        try {
-            const tags = ['edit', 'amv', 'twixtor'];
-            const randomTag = tags[Math.floor(Math.random() * tags.length)];
-            const searchQuery = encodeURIComponent(`${query} ${randomTag}`);
+        const outVid = path.join(__dirname, `edit_${Date.now()}.mp4`);
+        const tags = ['edit', 'amv', 'twixtor', 'shorts edit'];
+        const randomTag = tags.at(Math.floor(Math.random() * tags.length));
+        const searchTerm = `ytsearch1:${query} ${randomTag}`;
 
-            const apiUrl = 'https://tikwm.com' + '/api/feed/search?keywords=' + searchQuery + '&count=10';
-            
-            // إضافة ترويسات متصفح حقيقية لتجاوز حظر 403
-            const res = await axios.get(apiUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/javascript, */*; q=0.01',
-                    'Referer': 'https://tikwm.com/'
+        // تمرير node كـ runtime + اختيار صيغة mp4 بحجم أقل من 25M مباشرة لتجنب التخطي
+        const cmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<25M]/bestvideo[ext=mp4][filesize<20M]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -o "${outVid}" "${searchTerm}"`;
+
+        exec(cmd, async (err, stdout, stderr) => {
+            try {
+                if (!fs.existsSync(outVid)) {
+                    // البحث عن سطر ERROR الفعلي بدلاً من عرض WARNING
+                    const errorLines = (stderr || '').split('\n').filter(line => line.includes('ERROR:'));
+                    const reason = errorLines.length > 0 
+                        ? errorLines.join('\n') 
+                        : (stdout.includes('File is larger than') ? 'حجم الفيديو أكبر من الحد المسموح (25MB).' : (stderr || err?.message || 'غير معروف'));
+
+                    return await sock.sendMessage(
+                        remoteJid,
+                        { text: `❌ تعذر سحب التصميم:\n${reason}` },
+                        { quoted: m }
+                    );
                 }
-            });
 
-            const videos = res.data?.data?.videos;
-            if (!videos || videos.length === 0) {
-                return sock.sendMessage(
+                await sock.sendMessage(
                     remoteJid,
-                    { text: `❌ لم يتم العثور على تصميم لـ: ${query}` },
+                    {
+                        video: fs.readFileSync(outVid),
+                        mimetype: 'video/mp4',
+                        caption: `🌑 *تـصـمـيـم (Edit) جاهز:* ${query} 🎬`
+                    },
                     { quoted: m }
                 );
+            } catch (sendErr) {
+                await sock.sendMessage(
+                    remoteJid,
+                    { text: `❌ فشل إرسال الفيديو: ${sendErr.message}` },
+                    { quoted: m }
+                );
+            } finally {
+                if (fs.existsSync(outVid)) fs.unlinkSync(outVid);
             }
-
-            const pick = videos[Math.floor(Math.random() * videos.length)];
-            let videoUrl = pick.play || pick.wmplay;
-
-            if (videoUrl && !videoUrl.startsWith('http')) {
-                videoUrl = 'https://tikwm.com' + videoUrl;
-            }
-
-            // تحميل الفيديو كـ Buffer مع ترويسة المتصفح لضمان عدم حظر 403 عند التحميل
-            const videoRes = await axios.get(videoUrl, {
-                responseType: 'arraybuffer',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://tikwm.com/'
-                }
-            });
-
-            await sock.sendMessage(
-                remoteJid,
-                {
-                    video: Buffer.from(videoRes.data),
-                    mimetype: 'video/mp4',
-                    caption: `✨ *تم سحب التصميم بنجاح!*\n📌 *الشخصية:* ${query}`
-                },
-                { quoted: m }
-            );
-        } catch (e) {
-            await sock.sendMessage(
-                remoteJid,
-                { text: `❌ تعذر سحب التصميم: ${e.message}` },
-                { quoted: m }
-            );
-        }
+        });
     }
 };
+            
