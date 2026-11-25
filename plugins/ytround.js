@@ -1,65 +1,69 @@
+const { exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
 module.exports = {
-    name: 'tiktokedit',
-    aliases: ['تصميم', 'تصاميم', 'اديت', 'ttedit'],
-    command: ['تصميم', 'تصاميم', 'اديت'],
+    name: 'ytround',
+    aliases: ['دائري', 'فيديو_دائري', 'ptv', 'round'],
     async execute(sock, m, args, remoteJid) {
-        const query = Array.isArray(args) ? args.join(' ').trim() : '';
+        const query = args.join(' ').trim();
         if (!query) {
             return sock.sendMessage(
                 remoteJid,
-                { text: '❌ اكتب اسم الشخصية أو التصميم بعد الأمر.\nمثال: *.تصميم كاكاشي*' },
+                { text: '❌ اكتب اسم الفيديو أو رابط يوتيوب بعد الأمر.\nمثال: `.دائري تصميم jinwoo`' },
                 { quoted: m }
             );
         }
 
-        await sock.sendMessage(
-            remoteJid,
-            { text: `🎬 *جاري البحث عن تصميم تيك توك لـ:* ${query}...` },
-            { quoted: m }
-        );
+        await sock.sendMessage(remoteJid, { text: `⭕ *جاري سحب وتحويل الفيديو إلى دائري لـ:* ${query}...` }, { quoted: m });
 
-        try {
-            // 1. البحث في تيك توك عبر API مجاني بدون مفتاح
-            const searchQuery = encodeURIComponent(`${query} edit`);
-            const apiUrl = `https://tikwm.com{searchQuery}&count=15&cursor=0&HD=1`;
+        const timestamp = Date.now();
+        const rawVid = path.join(__dirname, `raw_${timestamp}.mp4`);
+        const roundVid = path.join(__dirname, `round_${timestamp}.mp4`);
 
-            const response = await fetch(apiUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
+        // التحقق هل المدخل رابط يوتيوب أم نص للبحث
+        const isUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(query);
+        const searchTerm = isUrl ? query : `ytsearch1:${query} edit`;
 
-            const json = await response.json();
+        // 1. تحميل الفيديو من يوتيوب مع تمرير node كـ runtime
+        const downloadCmd = `yt-dlp --js-runtimes node --remote-components ejs:github -f "best[ext=mp4][filesize<25M]/bestvideo[ext=mp4][filesize<20M]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -o "${rawVid}" "${searchTerm}"`;
 
-            if (!json || json.code !== 0 || !json.data || !json.data.videos || json.data.videos.length === 0) {
-                throw new Error('لم يتم العثور على تصاميم في تيك توك لهذا الاسم');
+        exec(downloadCmd, (dlErr, dlStdout, dlStderr) => {
+            if (!fs.existsSync(rawVid)) {
+                const errorLines = (dlStderr || '').split('\n').filter(line => line.includes('ERROR:'));
+                const reason = errorLines.length > 0 ? errorLines.join('\n') : 'تعذر العثور على الفيديو أو حجمه كبير جداً.';
+                return sock.sendMessage(remoteJid, { text: `❌ فشل التحميل:\n${reason}` }, { quoted: m });
             }
 
-            // 2. اختيار فيديو عشوائي من النتائج (تصفية الفيديوهات المناسبة للواتساب)
-            const validVideos = json.data.videos.filter(v => v.play && v.duration > 3 && v.duration <= 60);
-            const list = validVideos.length > 0 ? validVideos : json.data.videos;
-            const pick = list[Math.floor(Math.random() * list.length)];
+            // 2. قص الفيديو ليصبح مربعاً (1:1) وبمدة أقصاها 60 ثانية ليناسب الفيديو الدائري في واتساب
+            const ffmpegCmd = `ffmpeg -i "${rawVid}" -t 60 -vf "crop=min(iw\\,ih):min(iw\\,ih),scale=480:480" -c:v libx264 -preset fast -crf 26 -c:a aac -b:a 128k -y "${roundVid}"`;
 
-            // رابط الفيديو المباشر بدون علامة مائية
-            const videoUrl = pick.play.startsWith('http') ? pick.play : `https://tikwm.com${pick.play}`;
+            exec(ffmpegCmd, async (ffErr) => {
+                try {
+                    // اختيار الفيديو المربع إذا نجح القص، أو الأصلي كبديل
+                    const finalVid = fs.existsSync(roundVid) ? roundVid : rawVid;
 
-            // 3. إرسال الفيديو مباشرة للواتساب
-            await sock.sendMessage(
-                remoteJid,
-                {
-                    video: { url: videoUrl },
-                    mimetype: 'video/mp4',
-                    caption: `✨ *تصميم تيك توك (TikTok Edit)*\n👤 *المصمم:* ${pick.author?.nickname || 'غير معروف'}\n📌 *الوصف:* ${pick.title ? pick.title.slice(0, 100) : query}\n⏱️ *المدة:* ${pick.duration} ثانية`
-                },
-                { quoted: m }
-            );
-
-        } catch (e) {
-            await sock.sendMessage(
-                remoteJid,
-                { text: `❌ تعذر جلب التصميم: ${e.message}` },
-                { quoted: m }
-            );
-        }
+                    await sock.sendMessage(
+                        remoteJid,
+                        {
+                            video: fs.readFileSync(finalVid),
+                            mimetype: 'video/mp4',
+                            ptv: true // هذا الخيار يجعل الفيديو يظهر كرسالة فيديو دائرية في واتساب
+                        },
+                        { quoted: m }
+                    );
+                } catch (sendErr) {
+                    await sock.sendMessage(
+                        remoteJid,
+                        { text: `❌ فشل إرسال الفيديو الدائري: ${sendErr.message}` },
+                        { quoted: m }
+                    );
+                } finally {
+                    // حذف الملفات المؤقتة لتوفير مساحة السيرفر
+                    if (fs.existsSync(rawVid)) fs.unlinkSync(rawVid);
+                    if (fs.existsSync(roundVid)) fs.unlinkSync(roundVid);
+                }
+            });
+        });
     }
 };
